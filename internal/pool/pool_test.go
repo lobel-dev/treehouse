@@ -3594,14 +3594,11 @@ func TestPrune_MarkerlessSlotSkippedAsCannotVerify(t *testing.T) {
 	}
 }
 
-// TestValidateReleasePreconditions_GuardsTheActionUnderTheStateLock covers the
-// takeover window get's exit path used to leave open. It checked that it still
-// owned the slot, released the state lock, and only then detached the worktree,
-// so a `treehouse lease` landing in between moved the HEAD of a home the fresh
-// lease was there to protect. The guarded action must therefore both be skipped
-// when the slot has been taken over, and run inside the same lock as the check
-// so no other state writer can slip between them.
-func TestValidateReleasePreconditions_GuardsTheActionUnderTheStateLock(t *testing.T) {
+// TestValidateReleasePreconditions_RefusesTakenOverSlot pins get's exit-time
+// gate: the check passes while the slot still carries this session's owner
+// reservation and fails with ErrOwnerPreconditionFailed once a durable lease
+// has taken the slot over, since `treehouse lease` clears that reservation.
+func TestValidateReleasePreconditions_RefusesTakenOverSlot(t *testing.T) {
 	poolDir := t.TempDir()
 	owned := WorktreeEntry{Name: "1", Path: filepath.Join(poolDir, "1", "myrepo")}
 	setSeedInventory(&owned, []string{}, true)
@@ -3613,33 +3610,10 @@ func TestValidateReleasePreconditions_GuardsTheActionUnderTheStateLock(t *testin
 	}
 	ownReservation := ReleasePreconditions{RequireOwnedByCaller: true}
 
-	takeoverDone := make(chan struct{})
-	interleaved := false
-	err := ValidateReleasePreconditions(poolDir, owned.Path, ownReservation, func() error {
-		// Stands in for the concurrent `treehouse lease`: any other writer of
-		// this pool's state must wait until the guarded action has finished.
-		go func() {
-			defer close(takeoverDone)
-			WithStateLock(poolDir, func() error { return nil })
-		}()
-		select {
-		case <-takeoverDone:
-			interleaved = true
-		case <-time.After(200 * time.Millisecond):
-		}
-		return nil
-	})
-	<-takeoverDone
-	if err != nil {
+	if err := ValidateReleasePreconditions(poolDir, owned.Path, ownReservation); err != nil {
 		t.Fatalf("owned worktree rejected its own reservation: %v", err)
 	}
-	if interleaved {
-		t.Fatal("a concurrent state writer ran while the guarded action was in flight; the check and the action are not one locked step")
-	}
 
-	// The slot is now durably leased, as `treehouse lease` leaves it: the lease
-	// clears the owner reservation, so this is exactly what the exiting get
-	// sees. The guarded action must not touch it.
 	leased := owned
 	leased.OwnerPID = 0
 	leased.OwnerStartedAt = 0
@@ -3650,15 +3624,8 @@ func TestValidateReleasePreconditions_GuardsTheActionUnderTheStateLock(t *testin
 		t.Fatal(err)
 	}
 
-	ran := false
-	err = ValidateReleasePreconditions(poolDir, leased.Path, ownReservation, func() error {
-		ran = true
-		return nil
-	})
+	err := ValidateReleasePreconditions(poolDir, leased.Path, ownReservation)
 	if !errors.Is(err, ErrOwnerPreconditionFailed) {
 		t.Fatalf("expected the leased slot to fail the owner precondition, got %v", err)
-	}
-	if ran {
-		t.Fatal("the guarded action ran on a slot a durable lease had taken over")
 	}
 }

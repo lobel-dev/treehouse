@@ -114,7 +114,7 @@ func getRunE(cmd *cobra.Command, args []string) error {
 	// Check ownership before prompting; ReleaseConditional checks again before
 	// touching HEAD, files, or processes. Detachment is part of the reset.
 	ownReservation := pool.ReleasePreconditions{RequireOwnedByCaller: true}
-	if err := pool.ValidateReleasePreconditions(poolDir, wtPath, ownReservation, nil); err != nil {
+	if err := pool.ValidateReleasePreconditions(poolDir, wtPath, ownReservation); err != nil {
 		if errors.Is(err, pool.ErrOwnerPreconditionFailed) {
 			fmt.Fprintf(os.Stderr, "🌳 Not returning %s to the pool: %v; leaving it exactly as it is.\n", ui.PrettyPath(wtPath), err)
 			return nil

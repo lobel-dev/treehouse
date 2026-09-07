@@ -600,29 +600,19 @@ func Release(poolDir, worktreePath string) error {
 	return ReleaseConditional(poolDir, worktreePath, "", ReleasePreconditions{}, nil)
 }
 
-// ValidateReleasePreconditions checks that a managed worktree still matches
-// the requested lease, then runs guarded (when non-nil) while still holding the
-// state lock. No release effects are performed either way.
-//
-// guarded is how a caller performs a worktree action that must not run on a slot
-// someone else has taken over - get's exit-time detach, which would move the
-// HEAD of a home a concurrent 'treehouse lease' just protected. Checking and
-// then acting outside the lock are two separate instants, and a takeover lands
-// between them; under the lock they are one, exactly as ReleaseConditional
-// already runs its beforeReset.
-func ValidateReleasePreconditions(poolDir, worktreePath string, preconditions ReleasePreconditions, guarded func() error) error {
+// ValidateReleasePreconditions checks under the state lock that a managed
+// worktree still matches the requested lease or owner reservation. No release
+// effects are performed. Callers use it to refuse early (before prompting);
+// every worktree action still happens inside ReleaseConditional, which
+// re-checks the same preconditions under its own lock.
+func ValidateReleasePreconditions(poolDir, worktreePath string, preconditions ReleasePreconditions) error {
 	return WithStateLock(poolDir, func() error {
 		state, err := ReadState(poolDir)
 		if err != nil {
 			return err
 		}
-		if _, err := releasableWorktree(&state, worktreePath, preconditions); err != nil {
-			return err
-		}
-		if guarded == nil {
-			return nil
-		}
-		return guarded()
+		_, err = releasableWorktree(&state, worktreePath, preconditions)
+		return err
 	})
 }
 
@@ -685,6 +675,7 @@ func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions 
 				return err
 			}
 			if parked != branch {
+				fmt.Fprintf(os.Stderr, "🌳 Warning: cannot park the worktree on %q; using %s instead.\n", branch, parked)
 				requested = ""
 			}
 			wt.BaseBranch = requested

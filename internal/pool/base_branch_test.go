@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -295,8 +296,24 @@ func TestRelease_FallsBackWhenBaseBranchDisappears(t *testing.T) {
 	runGit(t, wtPath, "branch", "saved-develop")
 	runGit(t, repoDir, "branch", "-D", "develop")
 
-	if err := ReleaseConditional(poolDir, wtPath, "develop", ReleasePreconditions{}, nil); err != nil {
-		t.Fatalf("release must degrade to the default, not fail: %v", err)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStderr := os.Stderr
+	os.Stderr = w
+	releaseErr := ReleaseConditional(poolDir, wtPath, "develop", ReleasePreconditions{}, nil)
+	w.Close()
+	os.Stderr = oldStderr
+	warning, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if releaseErr != nil {
+		t.Fatalf("release must degrade to the default, not fail: %v", releaseErr)
+	}
+	if !strings.Contains(string(warning), "develop") || !strings.Contains(string(warning), "main") {
+		t.Errorf("fallback must warn on stderr naming the missing base and the branch used instead, got %q", warning)
 	}
 	if head := gitOut(t, wtPath, "rev-parse", "HEAD"); head != mainTip {
 		t.Errorf("slot parked at %s, want main tip %s", head, mainTip)
