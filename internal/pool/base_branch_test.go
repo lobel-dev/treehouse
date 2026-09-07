@@ -291,6 +291,8 @@ func TestRelease_FallsBackWhenBaseBranchDisappears(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Acquire failed: %v", err)
 	}
+	// Keep the deleted base commits durable while testing target fallback.
+	runGit(t, wtPath, "branch", "saved-develop")
 	runGit(t, repoDir, "branch", "-D", "develop")
 
 	if err := ReleaseConditional(poolDir, wtPath, "develop", ReleasePreconditions{}, nil); err != nil {

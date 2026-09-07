@@ -547,3 +547,26 @@ func WorktreeBackendName(path string) string {
 	}
 	return ""
 }
+
+// ReturnWorktree preserves committed Git work while returning a slot. The Git
+// backend invokes preparation only after locking HEAD and a containing ref.
+func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (string, error) {
+	b, err := destructiveBackendForWorktree(worktreePath)
+	if err != nil {
+		return "", err
+	}
+	if WorktreeBackendName(worktreePath) == "git" {
+		return gitvcs.ReturnWorktree(worktreePath, branch, fallback, seededPaths, beforeReset)
+	}
+	if beforeReset != nil {
+		if err := beforeReset(); err != nil {
+			return "", err
+		}
+	}
+	err = b.ResetWorktreeWithSeededPaths(worktreePath, branch, seededPaths)
+	if err != nil && fallback != "" && fallback != branch {
+		branch = fallback
+		err = b.ResetWorktreeWithSeededPaths(worktreePath, branch, seededPaths)
+	}
+	return branch, err
+}

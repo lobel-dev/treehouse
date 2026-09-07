@@ -335,6 +335,7 @@ func TestReleaseRemovesSeedHiddenByLocalManifestCommit(t *testing.T) {
 	}
 	runGit(t, wtPath, "add", ".worktreeinclude")
 	runGit(t, wtPath, "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "hide seed")
+	runGit(t, wtPath, "branch", "saved-seed-change")
 
 	if err := Release(poolDir, wtPath); err != nil {
 		t.Fatal(err)
@@ -373,6 +374,7 @@ func TestReleaseQuarantinesRecoveredMissingStateEntryWithUnknownSeedInventory(t 
 	}
 	runGit(t, wtPath, "add", ".worktreeinclude")
 	runGit(t, wtPath, "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "hide seed")
+	runGit(t, wtPath, "branch", "saved-seed-change")
 
 	if err := Release(poolDir, wtPath); err == nil {
 		t.Fatal("Release succeeded with an unknown recovered seed inventory")
@@ -436,6 +438,7 @@ func TestAcquire_FinalStateWriteFailurePreservesSeedInventoryForRecovery(t *test
 	}
 	runGit(t, wtPath, "add", ".worktreeinclude")
 	runGit(t, wtPath, "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "hide seed")
+	runGit(t, wtPath, "branch", "saved-seed-change")
 
 	if err := Release(poolDir, wtPath); err != nil {
 		t.Fatal(err)
@@ -525,6 +528,7 @@ func TestAcquire_ReusedFinalStateWriteFailureQuarantinesNewSeeds(t *testing.T) {
 	}
 	runGit(t, wtPath, "add", ".worktreeinclude")
 	runGit(t, wtPath, "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "hide new seed")
+	runGit(t, wtPath, "branch", "saved-seed-change")
 
 	if err := Release(poolDir, wtPath); err != nil {
 		t.Fatal(err)

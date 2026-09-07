@@ -610,17 +610,17 @@ func ResetWorktreeWithSeededPaths(worktreePath, branch string, seededPaths []str
 // which do not need HEAD.lock; HEAD itself is committed by renaming the
 // lock file onto HEAD, the same protocol git uses.
 func ResetWorktreeToRef(worktreePath, ref, expectedHead string, requireClean bool) error {
-	return resetWorktreeToRef(worktreePath, ref, expectedHead, requireClean, nil, false)
+	return resetWorktreeToRef(worktreePath, ref, expectedHead, requireClean, nil, false, nil)
 }
 
 // ResetWorktreeToRefWithSeededPaths removes the pool's trusted seed inventory
 // before restoring tracked content. A nil inventory does not authorize any
 // ignored-file deletion.
 func ResetWorktreeToRefWithSeededPaths(worktreePath, ref, expectedHead string, requireClean bool, seededPaths []string) error {
-	return resetWorktreeToRef(worktreePath, ref, expectedHead, requireClean, seededPaths, true)
+	return resetWorktreeToRef(worktreePath, ref, expectedHead, requireClean, seededPaths, true, nil)
 }
 
-func resetWorktreeToRef(worktreePath, ref, expectedHead string, requireClean bool, seededPaths []string, cleanSeeds bool) error {
+func resetWorktreeToRef(worktreePath, ref, expectedHead string, requireClean bool, seededPaths []string, cleanSeeds bool, beforeReset func(string) (func(), error)) error {
 	if !isCommitID(expectedHead) || !isCommitID(ref) {
 		return fmt.Errorf("worktree reset requires resolved commit IDs")
 	}
@@ -659,6 +659,13 @@ func resetWorktreeToRef(worktreePath, ref, expectedHead string, requireClean boo
 	}
 	if head != expectedHead {
 		return fmt.Errorf("worktree HEAD changed since safety check: was %s, now %s", expectedHead, head)
+	}
+	if beforeReset != nil {
+		unlock, err := beforeReset(head)
+		if err != nil {
+			return err
+		}
+		defer unlock()
 	}
 	if requireClean {
 		dirty, err := IsDirty(worktreePath)

@@ -679,31 +679,19 @@ func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions 
 				branch = requested
 			}
 		}
-		if beforeReset != nil {
-			if err := beforeReset(); err != nil {
+		if !markerless {
+			parked, err := vcs.ReturnWorktree(worktreePath, branch, fallback, wt.SeededPaths, beforeReset)
+			if err != nil {
 				return err
 			}
-		}
-		if !markerless {
-			seededPaths := wt.SeededPaths
-			if !wt.SeedInventoryKnown {
-				seededPaths = nil
-			}
-			if err := vcs.ResetWorktreeWithSeededPaths(worktreePath, branch, seededPaths); err != nil {
-				// The base resolved when the caller checked it but not now (it
-				// was deleted in between). Park on the default rather than
-				// strand the reservation with the processes already killed.
-				if fallback == "" || fallback == branch {
-					return err
-				}
-				fmt.Fprintf(os.Stderr, "🌳 Warning: cannot park the worktree on %q (%v); using %s instead.\n", branch, err, fallback)
-				if err := vcs.ResetWorktreeWithSeededPaths(worktreePath, fallback, seededPaths); err != nil {
-					return err
-				}
-				branch = fallback
+			if parked != branch {
 				requested = ""
 			}
 			wt.BaseBranch = requested
+		} else if beforeReset != nil {
+			if err := beforeReset(); err != nil {
+				return err
+			}
 		}
 
 		wt.OwnerPID = 0

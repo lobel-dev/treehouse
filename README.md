@@ -18,11 +18,11 @@ Or... are you starting a new worktree for every agent session, losing all your i
   <img src="https://raw.githubusercontent.com/kunchenguid/treehouse/main/demo.gif" alt="treehouse demo" width="800" />
 </p>
 
-Treehouse helps you manage a pool of reusable, isolated worktrees so each of your agents gets its own environment instantly — no cloning, no conflicts, no coordination overhead.
+Treehouse helps you manage a pool of reusable, isolated worktrees so each of your agents gets its own environment instantly - no cloning, no conflicts, no coordination overhead.
 
-- **Instant isolation** — `treehouse` puts you into a clean worktree with zero hassel.
-- **Reusable worktrees** — worktrees are preserved in a pool when you're done, with dependencies and build cache intact, ready for the next agent.
-- **Conflict-free** — automatic detection of in-use worktrees and your agents never step on each other's toes.
+- **Instant isolation** - `treehouse` puts you into a clean worktree with zero hassel.
+- **Reusable worktrees** - worktrees are preserved in a pool when you're done, with dependencies and build cache intact, ready for the next agent.
+- **Conflict-free** - automatic detection of in-use worktrees and your agents never step on each other's toes.
 
 ## Quick Start
 
@@ -143,16 +143,16 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
   (ready for next agent)
 ```
 
-- **Detached HEAD** — worktrees use detached HEAD mode, reset to whichever of the local or remote default branch is further ahead, avoiding branch name conflicts entirely.
-- **Choosable base branch** — set `base_branch` in `treehouse.toml`, or pass `treehouse get --base <branch>`, to cut worktrees from a branch other than the repository default. Opt-in; unset keeps today's inference. Worktrees stay in detached HEAD — this selects the commit they start at, it does not create or check out a branch.
+- **Detached HEAD** - worktrees use detached HEAD mode, reset to whichever of the local or remote default branch is further ahead, avoiding branch name conflicts entirely.
+- **Choosable base branch** - set `base_branch` in `treehouse.toml`, or pass `treehouse get --base <branch>`, to cut worktrees from a branch other than the repository default. Opt-in; unset keeps today's inference. Worktrees stay in detached HEAD - this selects the commit they start at, it does not create or check out a branch.
 - **No daemon** - all operations are inline CLI commands.
   Pool state is a small on-disk file, written under a lock by each command.
-- **Interactive shell setup** — when opening a subshell on macOS or Linux, `treehouse`, `treehouse get`, and `treehouse enter` start `$SHELL` as an interactive login shell when it resolves to `bash`, `fish`, or `zsh`. Other shells, fallback shells, and Windows use their default invocation. A regular executable that is merely named like a supported shell but does not accept `-i -l` (for example a wrapper script at `/opt/tools/bash`) is an accepted limitation: the resolved basename is the contract, and PATH-identity probing would reject genuine second installs of the same shell.
-- **In-use detection** — treehouse scans running processes and short-lived owner reservations to determine which worktrees are in-use. Reservations are persisted only while `get`, `destroy`, and `prune` lifecycle work is running.
+- **Interactive shell setup** - when opening a subshell on macOS or Linux, `treehouse`, `treehouse get`, and `treehouse enter` start `$SHELL` as an interactive login shell when it resolves to `bash`, `fish`, or `zsh`. Other shells, fallback shells, and Windows use their default invocation. A regular executable that is merely named like a supported shell but does not accept `-i -l` (for example a wrapper script at `/opt/tools/bash`) is an accepted limitation: the resolved basename is the contract, and PATH-identity probing would reject genuine second installs of the same shell.
+- **In-use detection** - treehouse scans running processes and short-lived owner reservations to determine which worktrees are in-use. Reservations are persisted only while `get`, `destroy`, and `prune` lifecycle work is running.
 - **Durable leases** - `treehouse get --lease` reserves a worktree as a persistent home without keeping a process inside it. Each acquisition gets an immutable random lease identity, and the lease is recorded in treehouse's own state. The worktree is never handed out by a later `get` and never removed by `prune` until you release it with `treehouse return`. Unlike process-based in-use detection, a lease survives with zero processes running inside the worktree.
 - **State recovery** - treehouse writes pool state atomically via a temp file and replacement.
   If an existing state file is empty, truncated, or omits an on-disk worktree, treehouse rebuilds the missing entries and quarantines them for inspection and explicit destruction. See [Recovering missing pool state](#recovering-missing-pool-state).
-- **Gitignored file seeding** — commit a `.worktreeinclude` file to copy selected local files from the main checkout on every acquire. See [Seeding gitignored files](#seeding-gitignored-files).
+- **Gitignored file seeding** - commit a `.worktreeinclude` file to copy selected local files from the main checkout on every acquire. See [Seeding gitignored files](#seeding-gitignored-files).
 - **Dirty detection** - treehouse treats tracked changes and untracked files as dirty, even when repository config hides untracked files from normal `git status` output.
 - **Safe pruning** - By default, `treehouse prune` removes only idle managed worktrees whose HEAD is already merged into the default branch and whose working tree is clean.
   `treehouse prune --all` applies the same safety checks across every managed pool under the user-level treehouse root.
@@ -267,7 +267,10 @@ With `--no-fetch`, Treehouse resets or creates the worktree from existing local 
 
 Release a lease with `treehouse return <path>`, which terminates lingering processes and verifies that no foreign process remains before it resets the worktree, clears the lease, and returns the worktree to the pool.
 If process termination or that verification fails, the command exits nonzero and leaves the worktree and lease in place instead of recycling a slot that may still be in use.
-A non-interactive dirty return aborts without cleaning: prune will not reclaim that slot. Retry by pasting the printed `treehouse return --force <quoted-path>` hint (shell-quoted so copy-paste does not expand metacharacters). `--force` with no path only works from inside a repository.
+An aborted return exits nonzero. A non-interactive dirty return aborts without cleaning: prune will not reclaim that slot. Retry by pasting the printed `treehouse return --force <quoted-path>` hint (shell-quoted so copy-paste does not expand metacharacters). `--force` with no path only works from inside a repository.
+
+For Git worktrees, both explicit return (including `--force`) and automatic return on subshell exit refuse to reset HEAD unless a local branch, tag, or remote-tracking ref preserves its commits. Unmerged branch-backed work can still be returned. Detached commits protected only by a reflog or another worktree's HEAD must first be saved, for example with `git branch saved-work HEAD` inside the worktree. A safety refusal preserves HEAD, files, and the reservation and happens before process termination. `--force` permits dirty-file cleanup; it does not bypass commit preservation. Git repositories using reftable ref storage are refused because return requires files-based ref locking. The opt-in jj backend retains its existing reset behavior.
+
 When you pass an explicit path, `treehouse return` can run from outside the repository because it resolves the managed pool from that worktree path.
 
 For retry-safe automation, condition the return on the identity from allocation or status:
@@ -393,7 +396,7 @@ If no config is found, the default pool size is 16.
 ### Base branch
 
 By default Treehouse infers the branch worktrees are cut from: `origin/HEAD`, then the checked-out branch, then `init.defaultBranch`.
-That inference is invisible and can drift — `origin/HEAD` is only set at clone time, and some clones never have it at all.
+That inference is invisible and can drift - `origin/HEAD` is only set at clone time, and some clones never have it at all.
 
 Set it explicitly for the whole pool:
 
@@ -413,7 +416,7 @@ treehouse get --lease --base release/2.x --json
 A few things worth knowing:
 
 - **Worktrees stay in detached HEAD.** This selects the commit a worktree starts at; it does not create or check out a branch. There is no `-b` shorthand, because `-b` means branch *creation* in git and this flag creates nothing.
-- **Branch names only.** `develop`, not `origin/develop`, a tag, or a commit SHA. Whichever of `develop` and `origin/develop` is further ahead wins, preferring `origin` when they have diverged — exactly how the inferred default behaves. A tag sharing a branch's name never wins: refs are resolved fully qualified.
+- **Branch names only.** `develop`, not `origin/develop`, a tag, or a commit SHA. Whichever of `develop` and `origin/develop` is further ahead wins, preferring `origin` when they have diverged - exactly how the inferred default behaves. A tag sharing a branch's name never wins: refs are resolved fully qualified.
 - **It fails closed.** A base that resolves to neither a local branch nor `origin/<branch>` is an error; Treehouse never falls back to the inferred default, which would hand you a worktree cut from the wrong branch and report success. `treehouse status` shows the resolved base, and flags a configured one it cannot resolve.
 - **Returned worktrees are parked on the base they were cut from**, so the pool keeps recycling. `base_branch` wins when it is set; otherwise a slot acquired with `--base` is parked back on that branch. A slot parked elsewhere could not be reused whenever the base is not a descendant of it.
 - **Existing pools migrate on their own.** A slot is recycled onto a newly requested base as long as it carries nothing beyond the base it was cut from; the two bases need no ancestry relation, so a `develop` slot rejoins a plain `treehouse get` and vice versa. A slot holding commits the new base does not contain is still refused, as always.
@@ -435,7 +438,7 @@ The backend is resolved on every command, and existing pool slots keep the flavo
 `destroy` and `prune` handle each slot by its own flavor (its `.git` or `.jj` marker), so a git worktree is still cleanly deregistered from git even after opting the repository into jj, and vice versa.
 A slot whose marker is missing entirely (a damaged slot) is never reused, reset, or detached; `treehouse status` reports it as `damaged`, `treehouse return` only clears its lease, `treehouse lease` still protects it but reports an empty `base_branch` rather than reading one through a fallback backend, `prune` reports it as unverifiable, and `treehouse destroy <path> --include-unlanded` removes it.
 `treehouse get` is flavor-aware too: it only reuses slots matching the backend the repository currently selects, and creates new slots with that backend, so a caller who opted in to jj is never handed a git worktree (or vice versa).
-Old-flavor slots stay in the pool untouched — `treehouse status` marks them and they count toward `max_trees` — until you migrate them: `treehouse destroy` the old slots and re-acquire with `treehouse get`.
+Old-flavor slots stay in the pool untouched - `treehouse status` marks them and they count toward `max_trees` - until you migrate them: `treehouse destroy` the old slots and re-acquire with `treehouse get`.
 
 jj-backend notes:
 
