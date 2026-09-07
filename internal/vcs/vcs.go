@@ -555,7 +555,11 @@ func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string,
 	if err != nil {
 		return "", err
 	}
-	if WorktreeBackendName(worktreePath) == "git" {
+	return returnWorktreeWithBackend(b, worktreePath, branch, fallback, seededPaths, beforeReset)
+}
+
+func returnWorktreeWithBackend(b Backend, worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (string, error) {
+	if b.Name() == "git" {
 		return gitvcs.ReturnWorktree(worktreePath, branch, fallback, seededPaths, beforeReset)
 	}
 	if beforeReset != nil {
@@ -563,7 +567,7 @@ func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string,
 			return "", err
 		}
 	}
-	err = b.ResetWorktreeWithSeededPaths(worktreePath, branch, seededPaths)
+	err := b.ResetWorktreeWithSeededPaths(worktreePath, branch, seededPaths)
 	if err != nil && fallback != "" && fallback != branch {
 		branch = fallback
 		err = b.ResetWorktreeWithSeededPaths(worktreePath, branch, seededPaths)

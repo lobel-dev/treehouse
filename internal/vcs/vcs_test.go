@@ -521,3 +521,27 @@ func TestDestructiveWrappersRefuseMarkerlessPath(t *testing.T) {
 		t.Fatalf("enclosing repository HEAD moved off main to %q", ref)
 	}
 }
+
+// Selection and dispatch are separate instants. A disappearing marker must not
+// send an already-selected Git backend through the unguarded generic reset.
+func TestReturnKeepsSelectedGitBackendWhenMarkerDisappears(t *testing.T) {
+	slot := t.TempDir()
+	marker := filepath.Join(slot, ".git")
+	if err := os.WriteFile(marker, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	b, err := destructiveBackendForWorktree(slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	_, err = returnWorktreeWithBackend(b, slot, "main", "", nil, func() error {
+		t.Error("generic preparation ran after the Git marker disappeared")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("missing repository must refuse return")
+	}
+}

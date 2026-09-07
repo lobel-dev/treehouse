@@ -3,6 +3,7 @@ package gitvcs
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -51,7 +52,7 @@ func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string,
 }
 
 func lockContainingRef(worktreePath, head string) (func(), error) {
-	refs, err := runGit(worktreePath, "for-each-ref", "--contains="+head, "--format=%(refname) %(symref)", "refs/heads/", "refs/tags/", "refs/remotes/")
+	refs, err := runGitStoredHistory(worktreePath, "for-each-ref", "--contains="+head, "--format=%(refname) %(symref)", "refs/heads/", "refs/tags/", "refs/remotes/")
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +89,7 @@ func lockContainingRef(worktreePath, head string) (func(), error) {
 			unlock()
 			continue
 		}
-		if _, err := runGit(worktreePath, "merge-base", "--is-ancestor", head, ref+"^{commit}"); err != nil {
+		if _, err := runGitStoredHistory(worktreePath, "merge-base", "--is-ancestor", head, ref+"^{commit}"); err != nil {
 			unlock()
 			continue
 		}
@@ -100,4 +101,21 @@ func lockContainingRef(worktreePath, head string) (func(), error) {
 		return unlock, nil
 	}
 	return nil, fmt.Errorf("refusing to return worktree: HEAD %s is not preserved by an available branch, tag, or remote ref; create a branch at HEAD before returning (reflogs are not sufficient)", head)
+}
+
+// Proof of durable reachability must use stored parents. Replacement objects
+// and legacy grafts can make a ref appear to contain an otherwise lost commit.
+// Force the graft override last so an inherited GIT_GRAFT_FILE cannot win.
+func runGitStoredHistory(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"--no-replace-objects"}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_GRAFT_FILE="+os.DevNull)
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
