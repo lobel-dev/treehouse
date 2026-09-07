@@ -11,6 +11,11 @@ import (
 // ReturnWorktree holds HEAD and a durable containing ref stable before stopping
 // writers or touching files. A reflog or another worktree's HEAD is not enough.
 func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (string, error) {
+	// The marker may disappear after backend selection. Check it before any
+	// Git command can discover and modify a repository enclosing the slot.
+	if _, err := os.Stat(filepath.Join(worktreePath, ".git")); err != nil {
+		return "", fmt.Errorf("refusing to return worktree: cannot verify Git marker: %w", err)
+	}
 	storage, err := runGit(worktreePath, "config", "--default", "files", "--get", "extensions.refStorage")
 	if err != nil {
 		return "", err

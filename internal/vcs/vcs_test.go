@@ -525,7 +525,29 @@ func TestDestructiveWrappersRefuseMarkerlessPath(t *testing.T) {
 // Selection and dispatch are separate instants. A disappearing marker must not
 // send an already-selected Git backend through the unguarded generic reset.
 func TestReturnKeepsSelectedGitBackendWhenMarkerDisappears(t *testing.T) {
-	slot := t.TempDir()
+	isolateUserConfig(t)
+	repo := t.TempDir()
+	mustRun(t, repo, "git", "init", "--initial-branch=main")
+	mustRun(t, repo, "git", "config", "user.email", "test@test.com")
+	mustRun(t, repo, "git", "config", "user.name", "Test")
+	tracked := filepath.Join(repo, "tracked.txt")
+	if err := os.WriteFile(tracked, []byte("committed\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, repo, "git", "add", ".")
+	mustRun(t, repo, "git", "commit", "-m", "initial")
+	if err := os.WriteFile(tracked, []byte("uncommitted\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	headPath := filepath.Join(repo, ".git", "HEAD")
+	beforeHead, err := os.ReadFile(headPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot := filepath.Join(repo, "pool", "1", "slot")
+	if err := os.MkdirAll(slot, 0755); err != nil {
+		t.Fatal(err)
+	}
 	marker := filepath.Join(slot, ".git")
 	if err := os.WriteFile(marker, nil, 0600); err != nil {
 		t.Fatal(err)
@@ -538,10 +560,16 @@ func TestReturnKeepsSelectedGitBackendWhenMarkerDisappears(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = returnWorktreeWithBackend(b, slot, "main", "", nil, func() error {
-		t.Error("generic preparation ran after the Git marker disappeared")
+		t.Error("preparation ran after the Git marker disappeared")
 		return nil
 	})
 	if err == nil {
-		t.Fatal("missing repository must refuse return")
+		t.Error("missing slot repository must refuse return")
+	}
+	if got, err := os.ReadFile(tracked); err != nil || string(got) != "uncommitted\n" {
+		t.Errorf("enclosing dirty data changed: %q %v", got, err)
+	}
+	if got, err := os.ReadFile(headPath); err != nil || string(got) != string(beforeHead) {
+		t.Errorf("enclosing HEAD changed: %q %v", got, err)
 	}
 }
