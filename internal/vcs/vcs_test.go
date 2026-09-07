@@ -463,7 +463,7 @@ func TestUnrecognizedVCSValueWarnsOnceAndDefaults(t *testing.T) {
 }
 
 // TestDestructiveWrappersRefuseMarkerlessPath pins the defense-in-depth
-// boundary: ResetWorktree, ResetWorktreeToRef, and DetachWorktree refuse a
+// boundary: ResetWorktree and ResetWorktreeToRef refuse a
 // path holding no .git or .jj marker instead of dispatching through the
 // configured backend, which inside a repository would rewrite the enclosing
 // checkout.
@@ -497,7 +497,6 @@ func TestDestructiveWrappersRefuseMarkerlessPath(t *testing.T) {
 		{"ResetWorktreeToRefWithSeededPaths", func() error {
 			return ResetWorktreeToRefWithSeededPaths(slot, "main", "", true, nil)
 		}},
-		{"DetachWorktree", func() error { return DetachWorktree(slot) }},
 	}
 	for _, c := range calls {
 		err := c.call()

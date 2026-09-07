@@ -1525,6 +1525,9 @@ func TestGetPreservesAttachedWorktreeWhenLeavingDirty(t *testing.T) {
 	if wtPath == "" {
 		t.Fatal("could not extract worktree path")
 	}
+	if strings.Contains(getErr, "return aborted") {
+		t.Fatalf("abort printed redundant sentinel: %s", getErr)
+	}
 	if !strings.Contains(getErr, "Worktree left dirty") {
 		t.Fatalf("expected get to leave dirty worktree for this regression, got: %s", getErr)
 	}
@@ -1557,6 +1560,9 @@ func TestReturnNonTTYDirtyExplainsUnreclaimableSlot(t *testing.T) {
 	_, returnErr, code := runTreehouse(t, repoDir, homeDir, nil, "return", wtPath)
 	if code == 0 {
 		t.Fatalf("expected non-TTY dirty abort to exit nonzero, got %d: %s", code, returnErr)
+	}
+	if strings.Contains(returnErr, "return aborted") || strings.Count(returnErr, "Aborted.") != 1 {
+		t.Fatalf("expected one helpful abort message: %s", returnErr)
 	}
 	t.Logf("non-TTY dirty abort stderr:\n%s", returnErr)
 	if !strings.Contains(returnErr, "prune will not reclaim this slot") {

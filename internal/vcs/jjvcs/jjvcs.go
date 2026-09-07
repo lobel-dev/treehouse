@@ -524,10 +524,6 @@ func (b *Backend) IsWorktreeSafeToReset(worktreePath, branch string) (bool, stri
 	return safe, ref, head, err
 }
 
-// DetachWorktree is a no-op: jj working copies are anonymous commits and
-// never hold a bookmark the way a git worktree holds a branch.
-func (*Backend) DetachWorktree(worktreePath string) error { return nil }
-
 // DefaultBranchMergeRef returns the revset merge-safety checks compare
 // against: the origin-tracking default bookmark when origin exists (callers
 // fetch first in lifecycle flows), otherwise the local default bookmark.

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -65,7 +66,10 @@ func init() {
 
 func Execute() error {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		// Return and get have already explained these user cancellations.
+		if !errors.Is(err, errReturnAborted) && !errors.Is(err, errReturnAbortedNonTTY) {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		return err
 	}
 	return nil

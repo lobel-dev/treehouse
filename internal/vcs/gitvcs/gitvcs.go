@@ -131,6 +131,8 @@ func refExists(repoRoot, ref string) bool {
 	return err == nil
 }
 
+type gitRunner func(string, ...string) (string, error)
+
 // branchRef returns whichever of the local branch or remote-tracking branch is
 // further ahead. If they have diverged (neither is an ancestor of the other),
 // it prefers origin. Falls back to whichever ref exists.
@@ -139,6 +141,15 @@ func refExists(repoRoot, ref string) bool {
 // disambiguation pick refs/tags/<name>, which it ranks above refs/heads/<name>,
 // and silently cut the worktree from a same-named tag.
 func branchRef(repoRoot, branch string) string {
+	return branchRefUsing(runGit, repoRoot, branch)
+}
+
+func branchRefUsing(run gitRunner, repoRoot, branch string) string {
+	refExists := func(dir, ref string) bool { _, err := run(dir, "rev-parse", "--verify", ref); return err == nil }
+	isAncestor := func(dir, a, b string) bool {
+		_, err := run(dir, "merge-base", "--is-ancestor", a, b)
+		return err == nil
+	}
 	local := "refs/heads/" + branch
 	remote := remoteTrackingRef("origin", branch)
 	hasLocal := refExists(repoRoot, local)
@@ -621,6 +632,10 @@ func ResetWorktreeToRefWithSeededPaths(worktreePath, ref, expectedHead string, r
 }
 
 func resetWorktreeToRef(worktreePath, ref, expectedHead string, requireClean bool, seededPaths []string, cleanSeeds bool, beforeReset func(string) (func(), error)) error {
+	return resetWorktreeToRefUsing(runGit, worktreePath, ref, expectedHead, requireClean, seededPaths, cleanSeeds, beforeReset)
+}
+
+func resetWorktreeToRefUsing(run gitRunner, worktreePath, ref, expectedHead string, requireClean bool, seededPaths []string, cleanSeeds bool, beforeReset func(string) (func(), error)) error {
 	if !isCommitID(expectedHead) || !isCommitID(ref) {
 		return fmt.Errorf("worktree reset requires resolved commit IDs")
 	}
@@ -636,7 +651,7 @@ func resetWorktreeToRef(worktreePath, ref, expectedHead string, requireClean boo
 			return fmt.Errorf("refusing to clean replaced worktree %s", worktreePath)
 		}
 	}
-	headPath, err := gitPath(worktreePath, "HEAD")
+	headPath, err := gitPathUsing(run, worktreePath, "HEAD")
 	if err != nil {
 		return err
 	}
@@ -653,7 +668,7 @@ func resetWorktreeToRef(worktreePath, ref, expectedHead string, requireClean boo
 		}
 	}()
 
-	head, err := worktreeHead(worktreePath)
+	head, err := run(worktreePath, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
 		return err
 	}
@@ -668,11 +683,11 @@ func resetWorktreeToRef(worktreePath, ref, expectedHead string, requireClean boo
 		defer unlock()
 	}
 	if requireClean {
-		dirty, err := IsDirty(worktreePath)
+		dirty, err := run(worktreePath, "status", "--porcelain", "--untracked-files=all")
 		if err != nil {
 			return err
 		}
-		if dirty {
+		if dirty != "" {
 			return fmt.Errorf("worktree became dirty after safety check")
 		}
 	}
@@ -685,10 +700,10 @@ func resetWorktreeToRef(worktreePath, ref, expectedHead string, requireClean boo
 		}
 	}
 
-	if _, err := runGit(worktreePath, "read-tree", "--reset", "-u", ref); err != nil {
+	if _, err := run(worktreePath, "read-tree", "--reset", "-u", ref); err != nil {
 		return err
 	}
-	if _, err := runGit(worktreePath, "clean", "-fd"); err != nil {
+	if _, err := run(worktreePath, "clean", "-fd"); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(lf, "%s\n", ref); err != nil {
@@ -721,15 +736,19 @@ func worktreeHead(worktreePath string) (string, error) {
 }
 
 func gitPath(worktreePath, name string) (string, error) {
-	out, err := runGit(worktreePath, "rev-parse", "--path-format=absolute", "--git-path", name)
+	return gitPathUsing(runGit, worktreePath, name)
+}
+
+func gitPathUsing(run gitRunner, worktreePath, name string) (string, error) {
+	out, err := run(worktreePath, "rev-parse", "--path-format=absolute", "--git-path", name)
 	if err == nil {
 		return filepath.Clean(filepath.FromSlash(out)), nil
 	}
-	gitDir, dirErr := runGit(worktreePath, "rev-parse", "--absolute-git-dir")
+	gitDir, dirErr := run(worktreePath, "rev-parse", "--absolute-git-dir")
 	if dirErr != nil {
 		return "", err
 	}
-	rel, relErr := runGit(worktreePath, "rev-parse", "--git-path", name)
+	rel, relErr := run(worktreePath, "rev-parse", "--git-path", name)
 	if relErr != nil {
 		return "", err
 	}
@@ -997,11 +1016,6 @@ func authenticateLinkedWorktree(root *os.Root, worktreePath string) error {
 	return nil
 }
 
-func DetachWorktree(worktreePath string) error {
-	_, err := runGit(worktreePath, "checkout", "--detach")
-	return err
-}
-
 // DefaultBranchMergeRef returns the fully qualified ref used for merge safety checks.
 // Repositories with origin use the current remote default tracking ref and fail
 // closed if that local tracking ref does not match remote HEAD; local-only
@@ -1253,7 +1267,6 @@ func (*Backend) ResetWorktreeToRefWithSeededPaths(worktreePath, ref, expectedHea
 func (*Backend) IsWorktreeSafeToReset(worktreePath, branch string) (bool, string, string, error) {
 	return IsWorktreeSafeToReset(worktreePath, branch)
 }
-func (*Backend) DetachWorktree(worktreePath string) error { return DetachWorktree(worktreePath) }
 func (*Backend) DefaultBranchMergeRef(repoRoot string) (string, error) {
 	return DefaultBranchMergeRef(repoRoot)
 }
