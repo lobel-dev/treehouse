@@ -79,7 +79,9 @@ type acquireOptions struct {
 	// skipFetch uses existing local refs without contacting origin.
 	skipFetch bool
 	// baseBranch is the explicitly requested base branch, or empty to infer it.
-	baseBranch      string
+	baseBranch string
+	// includeManifest replaces the committed manifest; nil keeps the default,
+	// while a non-nil empty slice explicitly disables seeding.
 	includeManifest []byte
 	// lease records a durable, process-independent reservation instead of the
 	// default short-lived owner reservation.
