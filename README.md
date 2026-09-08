@@ -192,7 +192,7 @@ Global navigation searches only managed pool directories immediately under the u
 
 `treehouse status --all --json` stays a top-level array with the usual status fields plus `pool` (the pool directory name) and `selector` on each row. Local status JSON is unchanged. Global status reads a snapshot without healing or writing pool state.
 
-A pool that cannot be read (for example one written by a newer treehouse) never hides the others: its projects are still listed on stdout, the unreadable pool is named on stderr, and the command exits non-zero to flag that the listing is incomplete.
+A pool that cannot be read (for example one written by a newer treehouse) never hides the others: worktrees from healthy pools are still listed on stdout, the unreadable pool is named on stderr, and the command exits non-zero to flag that the listing is incomplete.
 
 ### Flags
 
@@ -497,7 +497,7 @@ This is **opt-in**; the default global store is unchanged. In-project mode:
 
 - Places the pool at `<repo>/.treehouse/`, so worktrees sit next to the code and are **removed with the project** (`rm -rf <repo>` leaves no global orphan).
 - Git-ignores the pool directory automatically, so it stays out of `git add`.
-- Is not reached by global commands such as `treehouse prune --all` and `treehouse status --all`, which only cover the global root; in-project pools are removed with the project instead.
+- Is not discovered automatically by global commands such as `treehouse prune --all` and `treehouse status --all`, which default to the user-level root. To target the in-project pool, pass the repository's absolute path with `--root` (for example, `treehouse status --all --root /path/to/repo`).
 
 ### Hooks
 
