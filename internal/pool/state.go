@@ -288,7 +288,7 @@ func validSeedInventory(paths []string) bool {
 func recoverMissingStateEntries(poolDir string, s State) (State, error) {
 	registered := make([]os.FileInfo, 0, len(s.Worktrees))
 	for _, wt := range s.Worktrees {
-		info, err := os.Stat(wt.Path)
+		info, err := worktreeIdentity(wt.Path)
 		if os.IsNotExist(err) {
 			continue
 		}
@@ -349,7 +349,7 @@ func recoverMissingStateEntries(poolDir string, s State) (State, error) {
 // registered, so a genuinely missing entry still falls through to recovery.
 // Other filesystem errors must not turn an unverifiable path into a missing one.
 func isRegisteredWorktree(registered []os.FileInfo, path string) (bool, error) {
-	info, err := os.Stat(path)
+	info, err := worktreeIdentity(path)
 	if os.IsNotExist(err) {
 		return false, nil
 	}
@@ -362,6 +362,22 @@ func isRegisteredWorktree(registered []os.FileInfo, path string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// worktreeIdentity reads the filesystem identity os.SameFile compares. It
+// stats an open handle instead of a path because a FileInfo from os.Stat
+// carries that identity lazily on Windows: os.SameFile looks it up on demand
+// and reports any failure of that lookup as "different file" rather than as an
+// error, which would present a live slot as missing and fabricate a duplicate
+// recovered lease for it. A handle's FileInfo already carries the identity, so
+// an unreadable one surfaces here as an error instead.
+func worktreeIdentity(path string) (os.FileInfo, error) {
+	dir, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	return dir.Stat()
 }
 
 // recoveredLeaseHolder marks a WorktreeEntry reconstructed by recoverCorruptState
