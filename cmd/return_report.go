@@ -23,21 +23,19 @@ func printReleaseReport(report pool.ReleaseReport, forced, confirmed bool) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "🌳 Slot %s parked, reset to %s.\n", name, report.TargetBranch)
-	if report.PriorHead != "" {
-		head := report.PriorHead
-		if len(head) > 12 {
-			head = head[:12]
-		}
-		ref := report.PreservingRef
-		if report.AttachedBranch != "" {
-			ref = report.AttachedBranch
-		}
-		detail := head
-		if report.Subject != "" {
-			detail = report.Subject + "; " + head
-		}
-		fmt.Fprintf(os.Stderr, "Kept: %s (%s)\n", ref, detail)
+	head := report.PriorHead
+	if len(head) > 12 {
+		head = head[:12]
 	}
+	ref := report.PreservingRef
+	if report.AttachedBranch != "" {
+		ref = report.AttachedBranch
+	}
+	detail := head
+	if report.Subject != "" {
+		detail = report.Subject + "; " + head
+	}
+	fmt.Fprintf(os.Stderr, "Kept: %s (%s)\n", ref, detail)
 	if report.ChangesKnown && report.TrackedPaths+report.UntrackedPaths > 0 {
 		mode := "cleanup"
 		if confirmed {

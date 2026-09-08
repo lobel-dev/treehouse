@@ -7,7 +7,7 @@ on:
   # pull_request run that can only sit in action_required. Its output set is
   # exactly these files, so excluding them means no run is ever created.
   pull_request:
-    branches: [main]
+    # Include stacked PRs targeting feature branches.
     paths-ignore:
       - .release-please-manifest.json
       - CHANGELOG.md
