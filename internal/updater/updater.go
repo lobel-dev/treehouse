@@ -51,6 +51,11 @@ type CheckResult struct {
 
 // CacheEntry is persisted to ~/.treehouse/update-check.json.
 type CacheEntry struct {
+	// Source is the release endpoint the entry was fetched from. Readers
+	// treat an entry whose Source differs from githubAPIURL (including the
+	// empty Source of caches written before this field existed) as absent,
+	// so a cache filled from another repository's releases never shows an
+	// update notice or suppresses a fresh check against this fork.
 	Source        string    `json:"source"`
 	CheckedAt     time.Time `json:"checked_at"`
 	LatestVersion string    `json:"latest_version"`
