@@ -68,7 +68,7 @@ func InspectBranch(repo, branch string) (BranchState, error) {
 		key, value, _ := strings.Cut(field, " ")
 		switch key {
 		case "worktree":
-			holder.Path = value
+			holder.Path = filepath.FromSlash(value)
 		case "branch":
 			attached = value
 		case "locked":
