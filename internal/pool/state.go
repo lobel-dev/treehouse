@@ -279,10 +279,18 @@ func validSeedInventory(paths []string) bool {
 // recoverMissingStateEntries covers the narrow window where creating a Git
 // worktree succeeds but persisting its quarantine entry fails. Such a worktree
 // must remain unavailable even though the otherwise-valid state file omits it.
+//
+// A directory found on disk counts as already registered by filesystem
+// identity, never by path text: a pool addressed through a root spelling that
+// differs textually from the recorded one (a symlinked root such as macOS
+// /tmp -> /private/tmp, or a case alias) names the very same directories, and
+// a textual comparison would quarantine a phantom duplicate of every live slot.
 func recoverMissingStateEntries(poolDir string, s State) (State, error) {
-	known := make(map[string]bool, len(s.Worktrees))
+	registered := make([]os.FileInfo, 0, len(s.Worktrees))
 	for _, wt := range s.Worktrees {
-		known[filepath.Clean(wt.Path)] = true
+		if info, err := os.Stat(wt.Path); err == nil {
+			registered = append(registered, info)
+		}
 	}
 
 	slots, err := os.ReadDir(poolDir)
@@ -303,7 +311,7 @@ func recoverMissingStateEntries(poolDir string, s State) (State, error) {
 				continue
 			}
 			wtPath := filepath.Join(slotDir, entry.Name())
-			if known[filepath.Clean(wtPath)] {
+			if isRegisteredWorktree(registered, wtPath) {
 				continue
 			}
 			flavor, err := vcs.WorktreeBackendNameChecked(wtPath)
@@ -325,6 +333,22 @@ func recoverMissingStateEntries(poolDir string, s State) (State, error) {
 		}
 	}
 	return s, nil
+}
+
+// isRegisteredWorktree reports whether path is one of the worktrees the state
+// file already tracks. Registered paths that no longer exist are absent from
+// registered, so a genuinely missing entry still falls through to recovery.
+func isRegisteredWorktree(registered []os.FileInfo, path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	for _, known := range registered {
+		if os.SameFile(known, info) {
+			return true
+		}
+	}
+	return false
 }
 
 // recoveredLeaseHolder marks a WorktreeEntry reconstructed by recoverCorruptState
