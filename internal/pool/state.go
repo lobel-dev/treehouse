@@ -288,9 +288,14 @@ func validSeedInventory(paths []string) bool {
 func recoverMissingStateEntries(poolDir string, s State) (State, error) {
 	registered := make([]os.FileInfo, 0, len(s.Worktrees))
 	for _, wt := range s.Worktrees {
-		if info, err := os.Stat(wt.Path); err == nil {
-			registered = append(registered, info)
+		info, err := os.Stat(wt.Path)
+		if os.IsNotExist(err) {
+			continue
 		}
+		if err != nil {
+			return State{}, fmt.Errorf("inspecting registered pool worktree %s: %w", wt.Path, err)
+		}
+		registered = append(registered, info)
 	}
 
 	slots, err := os.ReadDir(poolDir)
@@ -311,7 +316,11 @@ func recoverMissingStateEntries(poolDir string, s State) (State, error) {
 				continue
 			}
 			wtPath := filepath.Join(slotDir, entry.Name())
-			if isRegisteredWorktree(registered, wtPath) {
+			known, err := isRegisteredWorktree(registered, wtPath)
+			if err != nil {
+				return State{}, err
+			}
+			if known {
 				continue
 			}
 			flavor, err := vcs.WorktreeBackendNameChecked(wtPath)
@@ -338,17 +347,21 @@ func recoverMissingStateEntries(poolDir string, s State) (State, error) {
 // isRegisteredWorktree reports whether path is one of the worktrees the state
 // file already tracks. Registered paths that no longer exist are absent from
 // registered, so a genuinely missing entry still falls through to recovery.
-func isRegisteredWorktree(registered []os.FileInfo, path string) bool {
+// Other filesystem errors must not turn an unverifiable path into a missing one.
+func isRegisteredWorktree(registered []os.FileInfo, path string) (bool, error) {
 	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
 	if err != nil {
-		return false
+		return false, fmt.Errorf("inspecting pool worktree %s: %w", path, err)
 	}
 	for _, known := range registered {
 		if os.SameFile(known, info) {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // recoveredLeaseHolder marks a WorktreeEntry reconstructed by recoverCorruptState
