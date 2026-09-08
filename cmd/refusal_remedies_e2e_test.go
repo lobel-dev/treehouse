@@ -171,7 +171,7 @@ func TestPruneExplainsPreservedBranchE2E(t *testing.T) {
 		}
 	}
 	poolDir := filepath.Dir(filepath.Dir(path))
-	root := filepath.Dir(poolDir)
+	root := filepath.Dir(filepath.Dir(poolDir))
 	selector := filepath.ToSlash(filepath.Join(filepath.Base(poolDir), "1"))
 	hint := "treehouse --root " + quoteReturnPath(root) + " enter " + quoteReturnPath(selector)
 	if !strings.Contains(out, hint) {

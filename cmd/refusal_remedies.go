@@ -53,7 +53,7 @@ func printWritableSlotHint(w io.Writer, path, name string) {
 	}
 	poolDir := filepath.Dir(filepath.Dir(path))
 	selector := filepath.ToSlash(filepath.Join(filepath.Base(poolDir), name))
-	fmt.Fprintf(w, "        Open another writable shell: treehouse --root %s enter %s\n", quoteReturnPath(filepath.Dir(poolDir)), quoteReturnPath(selector))
+	fmt.Fprintf(w, "        Open another writable shell: treehouse --root %s enter %s\n", quoteReturnPath(filepath.Dir(filepath.Dir(poolDir))), quoteReturnPath(selector))
 }
 
 func printPruneRemedy(w io.Writer, wt pool.PruneSkipped) {
