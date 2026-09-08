@@ -171,9 +171,11 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `treehouse status`         | Show pool status (highlights leased and current worktrees) |
 | `treehouse ls` | Show a human table of slots, current branches or advisory history, state, and next steps |
 | `treehouse return [path]`  | Release any lease and return a worktree only after verifying foreign processes stopped |
+| `treehouse return --slot <name>` | Return a named slot in the current pool |
 | `treehouse prune`          | Dry-run removal of stale idle worktrees in the current repo pool |
 | `treehouse prune --all`    | Dry-run removal of stale idle worktrees across every managed pool |
 | `treehouse destroy <path>` | Dry-run removal of one worktree (safe by default; `--yes` to execute) |
+| `treehouse destroy --slot <name>` | Preview removal of a named current-pool slot; leased removal still requires its exact path |
 | `treehouse destroy <pool> --all` | Dry-run removal of every disposable worktree in that pool |
 | `treehouse init`           | Create a default `treehouse.toml` config file        |
 | `treehouse update`         | Update treehouse to the latest version               |
@@ -226,6 +228,20 @@ cd "$(treehouse enter --print-path same-0a8cbd/1)"
 After a successful Git return, `ls` can show the previous attached branch as **last used**. This is history: the parked slot is detached, the branch is free to be checked out elsewhere, and resuming it need not reuse that slot. History never selects a lifecycle target or overrides dirty, in-use, leased, damaged, or unmerged state. A parked label is shown only after checking the current HEAD against the slot's base. Acquisition and a repeated detached return clear history; deleting the branch hides a proven-stale hint in snapshots and clears it during existing state healing. An unavailable repository is not proof that the branch disappeared. No history field is added to public JSON. jj rows omit Git history and preservation claims.
 
 Use the selector printed by your listing. Qualified `enter` opens that existing slot without acquiring, resetting, returning, or writing pool state. Exiting leaves its files and lease intact. Local `treehouse status` and `treehouse enter 1` still select the current repository.
+
+For explicit branch navigation, `treehouse enter --branch feature/example`
+opens the unique slot in the current pool actually holding that Git branch;
+`--print-path` also works. Slash-containing and numeric branch names are literal.
+Historical matches never select a slot, and ambiguous registrations are refused.
+If the branch is parked, use `treehouse work feature/example` instead.
+
+`treehouse return --slot 1` and `treehouse destroy --slot 1` select slot `1` in
+the current repository pool. Positional targets and target flags are mutually
+exclusive. `destroy --slot` cannot be combined with `--all` or `--include-leased`;
+leased destruction still requires the exact path. Existing path and fallback
+rules are unchanged: `return 1` means the relative path `1`, even when it does
+not exist, while a bare `return` uses `TREEHOUSE_DIR`, then the current directory.
+Neither `return` nor `destroy` accepts branch targeting.
 
 Global navigation searches only managed pool directories immediately under the user-level root, using user config or an absolute `--root` override. It does not discover repo-relative roots or other custom roots automatically; pass their absolute root explicitly. An empty root lists no worktrees and is not created. Relative roots are rejected for global navigation.
 

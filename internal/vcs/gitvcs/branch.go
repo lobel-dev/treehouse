@@ -105,6 +105,11 @@ func verifiedSlotGit(repo, path string) (gitRunner, error) {
 	return run, nil
 }
 
+func VerifySlotRepository(repo, path string) error {
+	_, err := verifiedSlotGit(repo, path)
+	return err
+}
+
 // WithBranchIdentity locks HEAD first, then its branch ref, matching return's
 // order. The caller holds the pool lock through callback and state persistence.
 func WithBranchIdentity(repo, path, branch string, callback func() error) error {

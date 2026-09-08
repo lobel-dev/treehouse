@@ -20,6 +20,7 @@ var (
 	returnForce         bool
 	returnIfLeaseID     string
 	returnIfLeaseHolder string
+	returnSlot          string
 )
 
 var (
@@ -29,9 +30,19 @@ var (
 )
 
 var returnCmd = &cobra.Command{
-	Use:   "return [path]",
+	Use:   "return [path] | return --slot <name>",
 	Short: "Terminate lingering processes and return a worktree",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("slot") {
+			if len(args) > 0 {
+				return fmt.Errorf("--slot and positional targets are mutually exclusive")
+			}
+			path, err := resolveCurrentSlot(returnSlot)
+			if err != nil {
+				return err
+			}
+			args = []string{path}
+		}
 		if cmd.Flags().Changed("if-lease-id") && returnIfLeaseID == "" {
 			return fmt.Errorf("--if-lease-id cannot be empty")
 		}
@@ -96,6 +107,7 @@ var returnCmd = &cobra.Command{
 
 func init() {
 	returnCmd.Flags().BoolVar(&returnForce, "force", false, "Clean, reset, and return without prompting")
+	returnCmd.Flags().StringVar(&returnSlot, "slot", "", "Return a named slot in the current repository pool")
 	returnCmd.Flags().StringVar(&returnIfLeaseID, "if-lease-id", "", "Return only if the current lease has this identity")
 	returnCmd.Flags().StringVar(&returnIfLeaseHolder, "if-lease-holder", "", "Return only if the current lease has this holder")
 	rootCmd.AddCommand(returnCmd)
