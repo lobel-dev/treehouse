@@ -280,6 +280,11 @@ func printDestroySkipped(w io.Writer, skipped []pool.DestroySkip) {
 	for i, s := range skipped {
 		fmt.Fprintf(w, "  %-4s  %-*s  %s  %s\n",
 			s.Target.Name, tagWidth, tags[i], ui.PrettyPath(s.Target.Path), destroySkipHint(s))
+		if s.Target.Detail != "" {
+			fmt.Fprintf(w, "        %s\n", s.Target.Detail)
+		}
+		printRefusalFacts(w, s.Target.Path, s.Target.Flavor, s.Target.Facts, false)
+		printDestroyRemedy(w, s)
 	}
 }
 

@@ -229,6 +229,8 @@ func printPruneSkipped(w io.Writer, skipped []pool.PruneSkipped, verbose bool) {
 			} else {
 				fmt.Fprintf(w, "  %-4s  %s\n", wt.Name, ui.PrettyPath(wt.Path))
 			}
+			printRefusalFacts(w, wt.Path, wt.Flavor, wt.Facts, verbose)
+			printPruneRemedy(w, wt)
 			if verbose && wt.Detail != "" {
 				fmt.Fprintf(w, "        detail: %s\n", wt.Detail)
 			}

@@ -28,8 +28,10 @@ type PruneWorktree struct {
 
 // PruneSkipped describes a worktree that prune left in place for safety.
 type PruneSkipped struct {
-	Name string
-	Path string
+	Flavor string
+	Facts  RefusalFacts
+	Name   string
+	Path   string
 	// Category is the stable group label for prune skip reporting.
 	Category string
 	// Reason is the short user-facing explanation for this specific worktree.
@@ -321,35 +323,6 @@ func mergeRefForWorktree(worktreePath string, context pruneContext) (string, err
 		return context.DefaultRef, nil
 	}
 	return vcs.DefaultBranchMergeRefForWorktree(worktreePath, context.RepoRoot)
-}
-
-// headLandedOnItsBase gives a slot that the default ref reports unmerged a
-// second reading against the base it was cut from and parked on. A pool
-// configured with a base the default does not contain would otherwise have
-// every pristine slot classified as holding unlanded work, and neither prune
-// nor destroy could reclaim it.
-//
-// Only an explicitly requested base is ever recorded, so an empty field means
-// the pool never opted into base_branch, not that the recorded base happens
-// to equal the default. Consulting a base there anyway would quietly replace
-// the origin-validated default ref with whichever of local and origin
-// branchRef ranks higher, and start deleting slots parked on an unpushed
-// local default for pools that never opted in.
-//
-// It answers only a definitive "not merged": callers reach it after the
-// default-ref check succeeded, so an unverifiable slot keeps that check's
-// fail-closed classification, and an unrecorded, unresolvable, or
-// indistinguishable base reports false.
-func headLandedOnItsBase(worktreePath, baseBranch string) bool {
-	if baseBranch == "" {
-		return false
-	}
-	ref := vcs.BaseBranchMergeRef(worktreePath, baseBranch)
-	if ref == "" {
-		return false
-	}
-	merged, err := vcs.IsHeadMergedIntoRef(worktreePath, ref)
-	return err == nil && merged
 }
 
 func resolvePruneDefaultRef(repoRoot string) (string, error) {
@@ -717,12 +690,23 @@ func analyzeIdleWorktree(resolveContext pruneContextResolver, wt WorktreeEntry, 
 			skipped = newPruneSkipped(wt.Name, wt.Path, PruneSkipOrphanedBackingRepo, pruneOrphanUnverifiedWarning, detail)
 		} else {
 			skipped = newPruneSkipped(wt.Name, wt.Path, pruneSkipCannotVerify, "cannot prove HEAD is merged into default branch", err.Error())
+			skipped.Facts.Comparisons = []MergeComparison{{Ref: ref, Result: "unknown"}}
 		}
 		return worktree, skipped, true, context, nil
 	}
-	if !merged && !headLandedOnItsBase(worktree.Path, wt.BaseBranch) {
-		skipped = newPruneSkipped(wt.Name, wt.Path, PruneSkipUnmerged, fmt.Sprintf("HEAD not merged into %s", ref), "")
-		return worktree, skipped, true, context, nil
+	if !merged {
+		comparisons := []MergeComparison{{Ref: ref, Result: "not merged"}}
+		landed := false
+		if wt.BaseBranch != "" {
+			var comparison MergeComparison
+			landed, comparison = recordedBaseComparison(worktree.Path, wt.BaseBranch)
+			comparisons = append(comparisons, comparison)
+		}
+		if !landed {
+			skipped = newPruneSkipped(wt.Name, wt.Path, PruneSkipUnmerged, fmt.Sprintf("HEAD not merged into %s", ref), "")
+			skipped.Facts.Comparisons = comparisons
+			return worktree, skipped, true, context, nil
+		}
 	}
 
 	container, err := removableWorktreeContainer(worktree.Path)
@@ -765,6 +749,8 @@ func newPruneSkipped(name, path, category, reason, detail string) PruneSkipped {
 		reason = category
 	}
 	return PruneSkipped{
+		Flavor:   vcs.WorktreeBackendName(path),
+		Facts:    RefusalFacts{Git: vcs.InspectGitWorktree(path)},
 		Name:     name,
 		Path:     path,
 		Category: category,

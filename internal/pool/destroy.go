@@ -60,6 +60,7 @@ type destroyReservation struct {
 
 // DestroyTarget describes one worktree considered for destruction.
 type DestroyTarget struct {
+	Facts RefusalFacts
 	Name  string
 	Path  string
 	Bytes int64
@@ -273,9 +274,14 @@ func (opts DestroyOptions) missingFlags(target DestroyTarget, allowLeased bool) 
 // same safety primitives prune relies on (ownerAlive,
 // process.FindProcessesInWorktree, backingRepositoryMissing, vcs.IsDirty,
 // vcs.IsHeadMergedIntoRef against the ref from resolvePruneDefaultRef, then
-// headLandedOnItsBase against the base the slot was cut from).
-func classifyForDestroy(wt WorktreeEntry, repoRoot, defaultRef string) DestroyTarget {
-	target := DestroyTarget{Name: wt.Name, Path: wt.Path, Flavor: vcs.WorktreeBackendName(wt.Path)}
+// recordedBaseComparison against the base the slot was cut from).
+func classifyForDestroy(wt WorktreeEntry, repoRoot, defaultRef string) (target DestroyTarget) {
+	defer func() {
+		if target.Class != DestroyDisposable {
+			target.Facts.Git = vcs.InspectGitWorktree(wt.Path)
+		}
+	}()
+	target = DestroyTarget{Name: wt.Name, Path: wt.Path, Flavor: vcs.WorktreeBackendName(wt.Path)}
 	if target.Flavor != "" && repoRoot != "" && target.Flavor != vcs.BackendNameFor(repoRoot) {
 		target.OtherFlavor = true
 	}
@@ -331,10 +337,20 @@ func classifyForDestroy(wt WorktreeEntry, repoRoot, defaultRef string) DestroyTa
 	merged, err := vcs.IsHeadMergedIntoRef(wt.Path, ref)
 	if err != nil {
 		target.addClass(DestroyUnverified, "cannot verify merge into "+ref+": "+err.Error())
+		target.Facts.Comparisons = []MergeComparison{{Ref: ref, Result: "unknown"}}
 		return finalizeDestroyTarget(target)
 	}
-	if !merged && !headLandedOnItsBase(wt.Path, wt.BaseBranch) {
-		target.addClass(DestroyUnmerged, "HEAD not merged into "+ref)
+	if !merged {
+		target.Facts.Comparisons = []MergeComparison{{Ref: ref, Result: "not merged"}}
+		landed := false
+		if wt.BaseBranch != "" {
+			var comparison MergeComparison
+			landed, comparison = recordedBaseComparison(wt.Path, wt.BaseBranch)
+			target.Facts.Comparisons = append(target.Facts.Comparisons, comparison)
+		}
+		if !landed {
+			target.addClass(DestroyUnmerged, "HEAD not merged into "+ref)
+		}
 	}
 
 	return finalizeDestroyTarget(target)
