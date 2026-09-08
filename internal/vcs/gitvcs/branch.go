@@ -150,7 +150,7 @@ func WithBranchIdentity(repo, path, branch string, callback func() error) error 
 
 // SwitchBranch leaves Git's own dirty-file and checked-out-branch guards on.
 // Treehouse holds the slot's pool ownership lock while this operation runs.
-func SwitchBranch(repo, path, branch, base string) error {
+func SwitchBranch(repo, path, branch string) error {
 	run, err := verifiedSlotGit(repo, path)
 	if err != nil {
 		return err
@@ -173,11 +173,9 @@ func SwitchBranch(repo, path, branch, base string) error {
 	case facts.Origin:
 		args = append(args, "--track", "-c", branch, "refs/remotes/origin/"+branch)
 	default:
-		target, err := resolveReturnRef(run, path, base)
-		if err != nil {
-			return err
-		}
-		args = append(args, "-c", branch, target)
+		// Acquisition already chose and checked out the base. Do not resolve
+		// its movable name again after hooks; start at the acquired HEAD.
+		args = append(args, "-c", branch)
 	}
 	_, err = run(path, args...)
 	return err

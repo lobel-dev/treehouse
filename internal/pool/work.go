@@ -53,7 +53,7 @@ func AcquireWorkBranch(repo, dir, branch string, max int, hooks []string, opts A
 		return WorkAcquisition{}, err
 	}
 	result := WorkAcquisition{Path: acquired.Path}
-	err = SwitchOwnedBranch(repo, dir, acquired.Path, branch, acquired.BaseBranch)
+	err = SwitchOwnedBranch(repo, dir, acquired.Path, branch)
 	return result, err
 }
 
@@ -123,7 +123,7 @@ func ReclaimBranch(repo, dir, path, branch string) (string, error) {
 	return reclaimed, err
 }
 
-func SwitchOwnedBranch(repo, dir, path, branch, base string) error {
+func SwitchOwnedBranch(repo, dir, path, branch string) error {
 	return WithStateLock(dir, func() error {
 		state, err := ReadState(dir)
 		if err != nil {
@@ -133,6 +133,6 @@ func SwitchOwnedBranch(repo, dir, path, branch, base string) error {
 		if err != nil {
 			return err
 		}
-		return vcs.SwitchGitBranch(repo, path, branch, base)
+		return vcs.SwitchGitBranch(repo, path, branch)
 	})
 }

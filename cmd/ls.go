@@ -108,8 +108,15 @@ func lsRow(slot pool.WorktreeStatus, poolDir, selector string, global bool) (bra
 	if slot.Flavor != "git" {
 		return
 	}
-	if slot.Status == pool.StatusAvailable && canWork {
-		next = acquire + " work <branch>"
+	if canWork {
+		repo, err := vcs.FindMainRepoRootFrom(slot.Path)
+		canWork = err == nil && vcs.BackendNameFor(repo) == "git"
+	}
+	if slot.Status == pool.StatusAvailable {
+		next = enter
+		if canWork {
+			next = acquire + " work <branch>"
+		}
 	}
 	facts := vcs.InspectGitWorktree(slot.Path)
 	if facts.Branch != "" {

@@ -631,7 +631,6 @@ func ValidateReleasePreconditions(poolDir, worktreePath string, preconditions Re
 // ReleaseReport is emitted only after state persistence succeeds.
 type ReleaseReport struct {
 	vcs.ReturnReport
-	Path    string
 	Name    string
 	Damaged bool
 }
@@ -657,7 +656,7 @@ func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions 
 }
 
 func ReleaseConditionalReport(poolDir, worktreePath, baseBranch string, preconditions ReleasePreconditions, beforeReset func() error) (ReleaseReport, error) {
-	report := ReleaseReport{Path: worktreePath}
+	var report ReleaseReport
 	markerless := vcs.WorktreeBackendName(worktreePath) == ""
 	// Resolved before the state lock so a failure surfaces before beforeReset
 	// kills the worktree's processes. It is only fatal when the slot has no
@@ -703,9 +702,6 @@ func ReleaseConditionalReport(poolDir, worktreePath, baseBranch string, precondi
 			}
 			report.ReturnReport = observed
 			parked := observed.TargetBranch
-			if parked == "" {
-				parked = branch
-			}
 			if parked != branch {
 				fmt.Fprintf(os.Stderr, "🌳 Warning: cannot park the worktree on %q; using %s instead.\n", branch, parked)
 				requested = ""

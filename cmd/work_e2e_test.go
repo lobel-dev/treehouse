@@ -1,11 +1,73 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestWorkNewBranchKeepsAcquiredBaseE2E(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	base := strings.TrimSpace(gitCmd(t, repo, "rev-parse", "HEAD"))
+	// Advance the main checkout after allocation, before work switches. The
+	// new branch must start at the commit acquired, not re-resolve the base.
+	hook := "git -C " + quoteReturnPath(repo) + " commit --allow-empty -m after-allocation"
+	quoted, err := json.Marshal(hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(home, ".config", "treehouse", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("[hooks]\npost_create = ["+string(quoted)+"]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code := runTreehouse(t, repo, home, []string{"SHELL=" + exitShellBin}, "work", "--no-fetch", "feature/fixed-base")
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	if got := strings.TrimSpace(gitCmd(t, repo, "rev-parse", "refs/heads/main")); got == base {
+		t.Fatalf("hook did not advance main: %s", stderr)
+	}
+	if got := strings.TrimSpace(gitCmd(t, repo, "rev-parse", "refs/heads/feature/fixed-base")); got != base {
+		t.Fatalf("work re-resolved moving base: got=%s acquired=%s", got, base)
+	}
+}
+
+func TestWorkNoFetchUsesOnlyKnownOriginRefsE2E(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	base := strings.TrimSpace(gitCmd(t, repo, "rev-parse", "HEAD"))
+	gitCmd(t, repo, "switch", "-c", "remote-seed")
+	gitCmd(t, repo, "commit", "--allow-empty", "-m", "remote-only")
+	gitCmd(t, repo, "push", "origin", "HEAD:refs/heads/feature/no-fetch")
+	gitCmd(t, repo, "switch", "main")
+	gitCmd(t, repo, "update-ref", "-d", "refs/remotes/origin/feature/no-fetch")
+	_, stderr, code := runTreehouse(t, repo, home, []string{"SHELL=" + exitShellBin}, "work", "--no-fetch", "feature/no-fetch")
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	if got := strings.TrimSpace(gitCmd(t, repo, "rev-parse", "refs/heads/feature/no-fetch")); got != base {
+		t.Fatalf("no-fetch discovered remote: %s", got)
+	}
+}
+
+func TestLsMixedGitSlotDoesNotSuggestUnsupportedWorkE2E(t *testing.T) {
+	requireJJ(t)
+	repo, home := setupColocatedRepoWithoutOptIn(t)
+	path := idleReportingSlot(t, repo, home)
+	gitCmd(t, path, "switch", "-c", "feature/mixed")
+	_, stderr, code := runTreehouse(t, repo, home, nil, "return", path)
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	out, stderr, code := runTreehouse(t, repo, home, []string{"TREEHOUSE_VCS=jj"}, "ls")
+	if code != 0 || strings.Contains(out, " work ") {
+		t.Fatalf("unsupported work suggestion: code=%d stdout=%s stderr=%s", code, out, stderr)
+	}
+}
 
 func TestWorkCreatesLiteralBranchE2E(t *testing.T) {
 	for _, branch := range []string{"feature/work", "123"} {

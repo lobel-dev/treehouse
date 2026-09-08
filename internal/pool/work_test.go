@@ -148,7 +148,7 @@ func TestWorkSwitchRefusesChangedLease(t *testing.T) {
 	if _, err := LeaseExisting(dir, "1", "new-holder"); err != nil {
 		t.Fatal(err)
 	}
-	if err := SwitchOwnedBranch(repo, dir, path, "new-branch", ""); err == nil {
+	if err := SwitchOwnedBranch(repo, dir, path, "new-branch"); err == nil {
 		t.Fatal("switch ignored changed lease")
 	}
 	if got := gitOut(t, path, "symbolic-ref", "--short", "HEAD"); got != "feature/work" {
