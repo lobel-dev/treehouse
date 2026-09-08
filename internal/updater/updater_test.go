@@ -103,6 +103,7 @@ func TestCacheReadWriteStaleness(t *testing.T) {
 
 	// Write cache
 	entry := CacheEntry{
+		Source:        githubAPIURL,
 		CheckedAt:     time.Now(),
 		LatestVersion: "v2.0.0",
 	}
@@ -153,6 +154,7 @@ func TestCacheStaleAfterTTL(t *testing.T) {
 	}
 
 	entry := CacheEntry{
+		Source:        githubAPIURL,
 		CheckedAt:     time.Now().Add(-25 * time.Hour),
 		LatestVersion: "v1.0.0",
 	}
@@ -174,6 +176,7 @@ func TestCacheStaleWhenCurrentPastLatest(t *testing.T) {
 
 	// Cache says latest is v1.0.0, but user is now on v1.1.0
 	entry := CacheEntry{
+		Source:        githubAPIURL,
 		CheckedAt:     time.Now(),
 		LatestVersion: "v1.0.0",
 	}
@@ -347,6 +350,7 @@ func TestCacheRoundTrip(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second)
 	entry := CacheEntry{
+		Source:        githubAPIURL,
 		CheckedAt:     now,
 		LatestVersion: "v1.2.3",
 	}

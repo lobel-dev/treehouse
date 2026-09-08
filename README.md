@@ -41,55 +41,53 @@ $ exit                         # exit the subshell when you're done
 
 ## Install
 
+This fork installs and updates from `lobel-dev/treehouse` releases. The Go module
+path retains the upstream identity; install from this checkout to use the fork.
+
 **macOS / Linux**
 
 ```sh
-curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/lobel-dev/treehouse/main/docs/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://kunchenguid.github.io/treehouse/install.ps1 | iex
+irm https://raw.githubusercontent.com/lobel-dev/treehouse/main/docs/install.ps1 | iex
 ```
 
 **Nix**
 
 ```sh
-nix run github:kunchenguid/treehouse
-# or pin a specific release tag:
-nix run github:kunchenguid/treehouse/v2.3.0
+nix run github:lobel-dev/treehouse
+# To pin a release, append a tag published by this fork.
 ```
 
 Install into your Nix profile:
 
 ```sh
-nix profile add github:kunchenguid/treehouse
+nix profile add github:lobel-dev/treehouse
 ```
 
 Or add to your flake inputs:
 
 ```nix
 treehouse = {
-  url = "github:kunchenguid/treehouse";
+  url = "github:lobel-dev/treehouse";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
 
 The flake exposes `#default` and `#treehouse` package outputs, plus `apps` for `nix run`.
 
-**Go**
-
-```sh
-go install github.com/kunchenguid/treehouse@latest
-```
-
 **From source**
 
 ```sh
-git clone https://github.com/kunchenguid/treehouse.git
+git clone https://github.com/lobel-dev/treehouse.git
 cd treehouse
 make install
+# Or, with Go alone:
+go install .
 ```
 
 ## How It Works

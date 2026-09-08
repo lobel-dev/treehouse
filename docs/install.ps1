@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$repo = "kunchenguid/treehouse"
+$repo = "lobel-dev/treehouse"
 $installDir = "$env:LOCALAPPDATA\treehouse"
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
