@@ -619,7 +619,7 @@ func ValidateReleasePreconditions(poolDir, worktreePath string, preconditions Re
 // ReleaseConditional verifies any lease preconditions, runs beforeReset, resets
 // the worktree, and clears its reservation while holding one state lock. The
 // callback is invoked only after all preconditions match and runs under that
-// lock so caller-side termination or detachment cannot race a later acquisition.
+// lock so caller-side process termination cannot race a later acquisition.
 // A markerless slot (its .git/.jj marker is gone) is never reset or asked for a
 // branch: dispatch on such a path falls back to the configured backend, which
 // in an in-project pool resolves the repository ENCLOSING the pool. Its

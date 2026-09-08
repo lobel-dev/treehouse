@@ -353,7 +353,7 @@ func WorktreeBackendNameChecked(path string) (string, error) {
 
 // backendForWorktree dispatches per-worktree operations - the facts that
 // gate destructive decisions (dirty, merged, main-root) and the actions on a
-// slot's own state (reset, detach) - on what the worktree actually is. The
+// slot's own state (reset, return) - on what the worktree actually is. The
 // configured backend must not answer for a slot of the other flavor: a
 // .jj-only slot inspected through git resolves the repository ENCLOSING the
 // pool, and with an in-project pool root a clean enclosing repo makes dirty
@@ -377,7 +377,7 @@ func backendForRemoval(repoRoot, path string) Backend {
 }
 
 // destructiveBackendForWorktree dispatches the operations that rewrite a
-// worktree's checkout (reset, detach). Unlike backendForWorktree it refuses a
+// worktree's checkout (reset, return). Unlike backendForWorktree it refuses a
 // path holding no .git or .jj marker instead of falling back to the
 // configured backend, which in an in-project pool would resolve — and rewrite
 // — the repository ENCLOSING the pool. Callers guard markerless slots first;
