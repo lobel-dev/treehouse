@@ -463,7 +463,7 @@ func TestUnrecognizedVCSValueWarnsOnceAndDefaults(t *testing.T) {
 }
 
 // TestDestructiveWrappersRefuseMarkerlessPath pins the defense-in-depth
-// boundary: ResetWorktree, ResetWorktreeToRef, and DetachWorktree refuse a
+// boundary: ResetWorktree and ResetWorktreeToRef refuse a
 // path holding no .git or .jj marker instead of dispatching through the
 // configured backend, which inside a repository would rewrite the enclosing
 // checkout.
@@ -497,7 +497,6 @@ func TestDestructiveWrappersRefuseMarkerlessPath(t *testing.T) {
 		{"ResetWorktreeToRefWithSeededPaths", func() error {
 			return ResetWorktreeToRefWithSeededPaths(slot, "main", "", true, nil)
 		}},
-		{"DetachWorktree", func() error { return DetachWorktree(slot) }},
 	}
 	for _, c := range calls {
 		err := c.call()
@@ -519,5 +518,57 @@ func TestDestructiveWrappersRefuseMarkerlessPath(t *testing.T) {
 	}
 	if ref := strings.TrimSpace(string(out)); ref != "main" {
 		t.Fatalf("enclosing repository HEAD moved off main to %q", ref)
+	}
+}
+
+// Selection and dispatch are separate instants. A disappearing marker must not
+// send an already-selected Git backend through the unguarded generic reset.
+func TestReturnKeepsSelectedGitBackendWhenMarkerDisappears(t *testing.T) {
+	isolateUserConfig(t)
+	repo := t.TempDir()
+	mustRun(t, repo, "git", "init", "--initial-branch=main")
+	mustRun(t, repo, "git", "config", "user.email", "test@test.com")
+	mustRun(t, repo, "git", "config", "user.name", "Test")
+	tracked := filepath.Join(repo, "tracked.txt")
+	if err := os.WriteFile(tracked, []byte("committed\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, repo, "git", "add", ".")
+	mustRun(t, repo, "git", "commit", "-m", "initial")
+	if err := os.WriteFile(tracked, []byte("uncommitted\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	headPath := filepath.Join(repo, ".git", "HEAD")
+	beforeHead, err := os.ReadFile(headPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slot := filepath.Join(repo, "pool", "1", "slot")
+	if err := os.MkdirAll(slot, 0755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(slot, ".git")
+	if err := os.WriteFile(marker, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	b, err := destructiveBackendForWorktree(slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	_, err = returnWorktreeWithBackend(b, slot, "main", "", nil, func() error {
+		t.Error("preparation ran after the Git marker disappeared")
+		return nil
+	})
+	if err == nil {
+		t.Error("missing slot repository must refuse return")
+	}
+	if got, err := os.ReadFile(tracked); err != nil || string(got) != "uncommitted\n" {
+		t.Errorf("enclosing dirty data changed: %q %v", got, err)
+	}
+	if got, err := os.ReadFile(headPath); err != nil || string(got) != string(beforeHead) {
+		t.Errorf("enclosing HEAD changed: %q %v", got, err)
 	}
 }

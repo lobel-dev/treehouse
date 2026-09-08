@@ -600,36 +600,26 @@ func Release(poolDir, worktreePath string) error {
 	return ReleaseConditional(poolDir, worktreePath, "", ReleasePreconditions{}, nil)
 }
 
-// ValidateReleasePreconditions checks that a managed worktree still matches
-// the requested lease, then runs guarded (when non-nil) while still holding the
-// state lock. No release effects are performed either way.
-//
-// guarded is how a caller performs a worktree action that must not run on a slot
-// someone else has taken over - get's exit-time detach, which would move the
-// HEAD of a home a concurrent 'treehouse lease' just protected. Checking and
-// then acting outside the lock are two separate instants, and a takeover lands
-// between them; under the lock they are one, exactly as ReleaseConditional
-// already runs its beforeReset.
-func ValidateReleasePreconditions(poolDir, worktreePath string, preconditions ReleasePreconditions, guarded func() error) error {
+// ValidateReleasePreconditions checks under the state lock that a managed
+// worktree still matches the requested lease or owner reservation. No release
+// effects are performed. Callers use it to refuse early (before prompting);
+// every worktree action still happens inside ReleaseConditional, which
+// re-checks the same preconditions under its own lock.
+func ValidateReleasePreconditions(poolDir, worktreePath string, preconditions ReleasePreconditions) error {
 	return WithStateLock(poolDir, func() error {
 		state, err := ReadState(poolDir)
 		if err != nil {
 			return err
 		}
-		if _, err := releasableWorktree(&state, worktreePath, preconditions); err != nil {
-			return err
-		}
-		if guarded == nil {
-			return nil
-		}
-		return guarded()
+		_, err = releasableWorktree(&state, worktreePath, preconditions)
+		return err
 	})
 }
 
 // ReleaseConditional verifies any lease preconditions, runs beforeReset, resets
 // the worktree, and clears its reservation while holding one state lock. The
 // callback is invoked only after all preconditions match and runs under that
-// lock so caller-side termination or detachment cannot race a later acquisition.
+// lock so caller-side process termination cannot race a later acquisition.
 // A markerless slot (its .git/.jj marker is gone) is never reset or asked for a
 // branch: dispatch on such a path falls back to the configured backend, which
 // in an in-project pool resolves the repository ENCLOSING the pool. Its
@@ -679,31 +669,20 @@ func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions 
 				branch = requested
 			}
 		}
-		if beforeReset != nil {
-			if err := beforeReset(); err != nil {
+		if !markerless {
+			parked, err := vcs.ReturnWorktree(worktreePath, branch, fallback, wt.SeededPaths, beforeReset)
+			if err != nil {
 				return err
 			}
-		}
-		if !markerless {
-			seededPaths := wt.SeededPaths
-			if !wt.SeedInventoryKnown {
-				seededPaths = nil
-			}
-			if err := vcs.ResetWorktreeWithSeededPaths(worktreePath, branch, seededPaths); err != nil {
-				// The base resolved when the caller checked it but not now (it
-				// was deleted in between). Park on the default rather than
-				// strand the reservation with the processes already killed.
-				if fallback == "" || fallback == branch {
-					return err
-				}
-				fmt.Fprintf(os.Stderr, "🌳 Warning: cannot park the worktree on %q (%v); using %s instead.\n", branch, err, fallback)
-				if err := vcs.ResetWorktreeWithSeededPaths(worktreePath, fallback, seededPaths); err != nil {
-					return err
-				}
-				branch = fallback
+			if parked != branch {
+				fmt.Fprintf(os.Stderr, "🌳 Warning: cannot park the worktree on %q; using %s instead.\n", branch, parked)
 				requested = ""
 			}
 			wt.BaseBranch = requested
+		} else if beforeReset != nil {
+			if err := beforeReset(); err != nil {
+				return err
+			}
 		}
 
 		wt.OwnerPID = 0

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kunchenguid/treehouse/internal/pool"
 )
 
 type leaseJSONResult struct {
@@ -1192,8 +1195,8 @@ func TestReturnConditionalDirtyPromptDoesNotHoldPoolLock(t *testing.T) {
 	if err := stdin.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := returnProcess.Wait(); err != nil {
-		t.Fatalf("aborted return failed: %v", err)
+	if err := returnProcess.Wait(); err == nil {
+		t.Fatal("aborted return must exit nonzero")
 	}
 }
 
@@ -1509,28 +1512,31 @@ func TestCommandsInsideWorktreeUseMainRepoPool(t *testing.T) {
 	}
 }
 
-func TestGetDetachesWorktreeWhenLeavingDirty(t *testing.T) {
+func TestGetPreservesAttachedWorktreeWhenLeavingDirty(t *testing.T) {
 	repoDir, homeDir := setupTestRepo(t)
 	gitCmd(t, repoDir, "checkout", "-b", "feature")
 
 	env := []string{"SHELL=" + dirtyMainShellBin}
 	_, getErr, code := runTreehouse(t, repoDir, homeDir, env, "get")
-	if code != 0 {
-		t.Fatalf("get failed (code %d): %s", code, getErr)
+	if code == 0 {
+		t.Fatalf("aborted get must exit nonzero (code %d): %s", code, getErr)
 	}
 	wtPath := extractWorktreePath(getErr, homeDir)
 	if wtPath == "" {
 		t.Fatal("could not extract worktree path")
 	}
+	if strings.Contains(getErr, "return aborted") {
+		t.Fatalf("abort printed redundant sentinel: %s", getErr)
+	}
 	if !strings.Contains(getErr, "Worktree left dirty") {
 		t.Fatalf("expected get to leave dirty worktree for this regression, got: %s", getErr)
 	}
 
-	if branch, err := gitCmdResult(t, wtPath, "symbolic-ref", "--short", "-q", "HEAD"); err == nil {
-		t.Fatalf("expected worktree HEAD to be detached, got branch %q", branch)
+	if branch, err := gitCmdResult(t, wtPath, "symbolic-ref", "--short", "-q", "HEAD"); err != nil || branch != "main" {
+		t.Fatalf("expected original attached main branch, got %q: %v", branch, err)
 	}
-	if out, err := gitCmdResult(t, repoDir, "checkout", "main"); err != nil {
-		t.Fatalf("expected main repo to checkout main after dirty worktree exit, got: %v\n%s", err, out)
+	if got, err := os.ReadFile(filepath.Join(wtPath, "README.md")); err != nil || string(got) != "dirty\n" {
+		t.Fatalf("dirty content changed: %q: %v", got, err)
 	}
 }
 
@@ -1552,8 +1558,11 @@ func TestReturnNonTTYDirtyExplainsUnreclaimableSlot(t *testing.T) {
 	}
 
 	_, returnErr, code := runTreehouse(t, repoDir, homeDir, nil, "return", wtPath)
-	if code != 0 {
-		t.Fatalf("expected non-TTY dirty abort to exit 0, got %d: %s", code, returnErr)
+	if code == 0 {
+		t.Fatalf("expected non-TTY dirty abort to exit nonzero, got %d: %s", code, returnErr)
+	}
+	if strings.Contains(returnErr, "return aborted") || strings.Count(returnErr, "Aborted.") != 1 {
+		t.Fatalf("expected one helpful abort message: %s", returnErr)
 	}
 	t.Logf("non-TTY dirty abort stderr:\n%s", returnErr)
 	if !strings.Contains(returnErr, "prune will not reclaim this slot") {
@@ -2561,5 +2570,84 @@ func TestEnterPrintPathPrintsOnlyPathToStdout(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(path, "README.md")); err != nil {
 		t.Errorf("printed path is not a valid worktree: %s (%v)", path, err)
+	}
+}
+
+func TestReturnPreservesUnreferencedCommits(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		t.Run(fmt.Sprint(force), func(t *testing.T) {
+			repo, home := setupTestRepo(t)
+			out, stderr, code := runTreehouse(t, repo, home, nil, "get", "--lease", "--json")
+			if code != 0 {
+				t.Fatal(stderr)
+			}
+			var lease leaseJSONResult
+			if err := json.Unmarshal([]byte(out), &lease); err != nil {
+				t.Fatal(err)
+			}
+			gitCmd(t, lease.Path, "commit", "--allow-empty", "-m", "unreferenced work")
+			head := gitCmd(t, lease.Path, "rev-parse", "HEAD")
+			args := []string{"return", lease.Path}
+			if force {
+				args = append(args, "--force")
+			}
+			_, stderr, code = runTreehouse(t, repo, home, nil, args...)
+			if code == 0 {
+				t.Errorf("return discarded unreferenced commit: %s", stderr)
+			}
+			if got := gitCmd(t, lease.Path, "rev-parse", "HEAD"); got != head {
+				t.Errorf("HEAD changed: %s -> %s", head, got)
+			}
+			entry, err := pool.FindByPath(filepath.Dir(filepath.Dir(lease.Path)), lease.Path)
+			if err != nil || entry == nil || entry.LeaseID != lease.LeaseID {
+				t.Errorf("lease changed: %+v, %v", entry, err)
+			}
+		})
+	}
+}
+
+func TestGetExitPreservesUnreferencedCommit(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	signals := t.TempDir()
+	ready, release := filepath.Join(signals, "ready"), filepath.Join(signals, "release")
+	command := exec.Command(treehouseBin, "get")
+	command.Dir = repo
+	command.Env = buildEnv(home, "SHELL="+waitShellBin, "TREEHOUSE_TEST_READY="+ready, "TREEHOUSE_TEST_RELEASE="+release)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waited := false
+	t.Cleanup(func() {
+		if !waited {
+			_ = os.WriteFile(release, nil, 0600)
+			_ = command.Wait()
+		}
+	})
+	var wt string
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(ready); err == nil && len(b) > 0 {
+			wt = string(b)
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if wt == "" {
+		t.Fatal("shell did not report worktree")
+	}
+	gitCmd(t, wt, "commit", "--allow-empty", "-m", "unreferenced shell work")
+	head := gitCmd(t, wt, "rev-parse", "HEAD")
+	if err := os.WriteFile(release, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := command.Wait()
+	waited = true
+	if err == nil {
+		t.Fatalf("get exit discarded commit: %s", stderr.String())
+	}
+	if got := gitCmd(t, wt, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("HEAD changed: %s -> %s", head, got)
 	}
 }

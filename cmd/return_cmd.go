@@ -58,7 +58,7 @@ var returnCmd = &cobra.Command{
 			if cmd.Flags().Changed("if-lease-holder") {
 				preconditions.ExpectedLeaseHolder = &returnIfLeaseHolder
 			}
-			err = pool.ValidateReleasePreconditions(poolDir, wtPath, preconditions, nil)
+			err = pool.ValidateReleasePreconditions(poolDir, wtPath, preconditions)
 			if err == nil {
 				err = confirmWorktreeReturn(wtPath)
 			}
@@ -77,11 +77,11 @@ var returnCmd = &cobra.Command{
 		}
 		if errors.Is(err, errReturnAbortedNonTTY) {
 			fmt.Fprintf(os.Stderr, "🌳 Aborted. Dirty worktree left in place; prune will not reclaim this slot. Use treehouse return --force %s to clean and return it.\n", quoteReturnPath(wtPath))
-			return nil
+			return err
 		}
 		if errors.Is(err, errReturnAborted) {
 			fmt.Fprintln(os.Stderr, "🌳 Aborted.")
-			return nil
+			return err
 		}
 		if err != nil {
 			return fmt.Errorf("failed to return worktree: %w", err)
@@ -181,15 +181,6 @@ func confirmWorktreeReturn(wtPath string) error {
 }
 
 func finalizeWorktreeReturn(wtPath string) error {
-	// A markerless slot must never be detached: dispatch on such a path falls
-	// back to the configured backend, which in an in-project pool would detach
-	// the HEAD of the repository ENCLOSING the pool.
-	if !returnForce && vcs.WorktreeBackendName(wtPath) != "" {
-		if err := vcs.DetachWorktree(wtPath); err != nil {
-			return fmt.Errorf("failed to detach worktree HEAD: %w", err)
-		}
-	}
-
 	return killLingeringProcesses(wtPath)
 }
 

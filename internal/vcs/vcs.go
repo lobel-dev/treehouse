@@ -96,9 +96,6 @@ type Backend interface {
 	// must pass both to ResetWorktreeToRef. The check fails closed when
 	// the target or HEAD cannot be resolved.
 	IsWorktreeSafeToReset(worktreePath, branch string) (bool, string, string, error)
-	// DetachWorktree releases any branch the worktree has checked out so
-	// pooled worktrees never hold branch names.
-	DetachWorktree(worktreePath string) error
 	// DefaultBranchMergeRef returns the fully qualified ref merge-safety
 	// checks compare against, failing closed when it cannot be verified.
 	DefaultBranchMergeRef(repoRoot string) (string, error)
@@ -356,7 +353,7 @@ func WorktreeBackendNameChecked(path string) (string, error) {
 
 // backendForWorktree dispatches per-worktree operations - the facts that
 // gate destructive decisions (dirty, merged, main-root) and the actions on a
-// slot's own state (reset, detach) - on what the worktree actually is. The
+// slot's own state (reset, return) - on what the worktree actually is. The
 // configured backend must not answer for a slot of the other flavor: a
 // .jj-only slot inspected through git resolves the repository ENCLOSING the
 // pool, and with an in-project pool root a clean enclosing repo makes dirty
@@ -380,7 +377,7 @@ func backendForRemoval(repoRoot, path string) Backend {
 }
 
 // destructiveBackendForWorktree dispatches the operations that rewrite a
-// worktree's checkout (reset, detach). Unlike backendForWorktree it refuses a
+// worktree's checkout (reset, return). Unlike backendForWorktree it refuses a
 // path holding no .git or .jj marker instead of falling back to the
 // configured backend, which in an in-project pool would resolve — and rewrite
 // — the repository ENCLOSING the pool. Callers guard markerless slots first;
@@ -450,15 +447,6 @@ func ResetWorktreeToRefWithSeededPaths(worktreePath, ref, expectedHead string, r
 // the worktree HEAD recorded at check time.
 func IsWorktreeSafeToReset(worktreePath, branch string) (bool, string, string, error) {
 	return backendForWorktree(worktreePath).IsWorktreeSafeToReset(worktreePath, branch)
-}
-
-// DetachWorktree releases any branch the worktree has checked out.
-func DetachWorktree(worktreePath string) error {
-	b, err := destructiveBackendForWorktree(worktreePath)
-	if err != nil {
-		return err
-	}
-	return b.DetachWorktree(worktreePath)
 }
 
 // DefaultBranchMergeRef returns the fully qualified ref merge-safety checks
@@ -546,4 +534,31 @@ func WorktreeBackendName(path string) string {
 		return b.Name()
 	}
 	return ""
+}
+
+// ReturnWorktree preserves committed Git work while returning a slot. The Git
+// backend invokes preparation only after locking HEAD and a containing ref.
+func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (string, error) {
+	b, err := destructiveBackendForWorktree(worktreePath)
+	if err != nil {
+		return "", err
+	}
+	return returnWorktreeWithBackend(b, worktreePath, branch, fallback, seededPaths, beforeReset)
+}
+
+func returnWorktreeWithBackend(b Backend, worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (string, error) {
+	if b.Name() == "git" {
+		return gitvcs.ReturnWorktree(worktreePath, branch, fallback, seededPaths, beforeReset)
+	}
+	if beforeReset != nil {
+		if err := beforeReset(); err != nil {
+			return "", err
+		}
+	}
+	err := b.ResetWorktreeWithSeededPaths(worktreePath, branch, seededPaths)
+	if err != nil && fallback != "" && fallback != branch {
+		branch = fallback
+		err = b.ResetWorktreeWithSeededPaths(worktreePath, branch, seededPaths)
+	}
+	return branch, err
 }
