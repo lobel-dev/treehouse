@@ -23,7 +23,7 @@ func TestReturnWorktreeLocksDurableRefBeforePreparation(t *testing.T) {
 				mustGit(t, wt, "pack-refs", "--all", "--prune")
 			}
 			called := false
-			_, err = ReturnWorktree(wt, "main", "", nil, func() error {
+			report, err := ReturnWorktreeReport(wt, "main", "", nil, func() error {
 				called = true
 				repo, err := FindMainRepoRootFrom(wt)
 				if err != nil {
@@ -42,6 +42,9 @@ func TestReturnWorktreeLocksDurableRefBeforePreparation(t *testing.T) {
 			})
 			if err != nil {
 				t.Fatal(err)
+			}
+			if !report.Parked || report.PriorHead != head || report.AttachedBranch != "feature" || report.PreservingRef != "refs/heads/feature" {
+				t.Fatalf("incorrect protected report: %+v", report)
 			}
 			if !called {
 				t.Fatal("preparation not called")

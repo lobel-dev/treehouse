@@ -563,3 +563,19 @@ func returnWorktreeWithBackend(b Backend, worktreePath, branch, fallback string,
 	}
 	return branch, err
 }
+
+// ReturnReport contains Git facts only when Git's return operation observed them.
+type ReturnReport = gitvcs.ReturnReport
+type UnpreservedHeadError = gitvcs.UnpreservedHeadError
+
+func ReturnWorktreeReport(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (ReturnReport, error) {
+	b, err := destructiveBackendForWorktree(worktreePath)
+	if err != nil {
+		return ReturnReport{}, err
+	}
+	if b.Name() == "git" {
+		return gitvcs.ReturnWorktreeReport(worktreePath, branch, fallback, seededPaths, beforeReset)
+	}
+	parked, err := returnWorktreeWithBackend(b, worktreePath, branch, fallback, seededPaths, beforeReset)
+	return ReturnReport{Parked: err == nil, TargetBranch: parked}, err
+}

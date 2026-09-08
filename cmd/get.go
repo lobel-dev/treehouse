@@ -152,15 +152,19 @@ func getRunE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := returnWorktreeToPool(poolDir, wtPath, releaseBaseBranch(repoRoot, cfg), ownReservation); err != nil {
+	report, releaseErr := pool.ReleaseConditionalReport(poolDir, wtPath, releaseBaseBranch(repoRoot, cfg), ownReservation, func() error {
+		return killLingeringProcesses(wtPath)
+	})
+	if err := releaseErr; err != nil {
 		if errors.Is(err, pool.ErrOwnerPreconditionFailed) {
 			fmt.Fprintf(os.Stderr, "🌳 Not returning %s to the pool: %v; leaving it exactly as it is.\n", ui.PrettyPath(wtPath), err)
 			return nil
 		}
-		fmt.Fprintf(os.Stderr, "🌳 Warning: %v; leaving worktree in place.\n", err)
+		err = returnErrorRemedy(wtPath, err)
+		fmt.Fprintf(os.Stderr, "🌳 Warning: %v\n", err)
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "🌳 Worktree returned to pool.")
+	printReleaseReport(report, false, dirty)
 
 	return nil
 }

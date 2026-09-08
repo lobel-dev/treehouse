@@ -36,7 +36,7 @@ $ treehouse                    # get a worktree and drop into a subshell
 
 $ exit                         # exit the subshell when you're done
 🌳 Terminated lingering processes: opencode (pid 12345)
-🌳 Worktree returned to pool.
+🌳 Slot 1 parked, reset to main.
 ```
 
 ## Install
@@ -299,6 +299,10 @@ If process termination or that verification fails, the command exits nonzero and
 An aborted return exits nonzero. A non-interactive dirty return aborts without cleaning: prune will not reclaim that slot. Retry by pasting the printed `treehouse return --force <quoted-path>` hint (shell-quoted so copy-paste does not expand metacharacters). `--force` with no path only works from inside a repository.
 
 For Git worktrees, both explicit return (including `--force`) and automatic return on subshell exit refuse to reset HEAD unless a local branch, tag, or remote-tracking ref preserves its commits. Unmerged branch-backed work can still be returned. Preservation is checked against stored commit ancestry, ignoring replacement objects and legacy grafts. Detached commits protected only by a reflog or another worktree's HEAD must first be saved, for example with `git branch saved-work HEAD` inside the worktree. The initial commit-preservation checks happen before process termination; a refusal there preserves HEAD, files, and the reservation. Later preparation or reset failures retain the reservation, but processes may already have stopped. Return pins Git commands to the slot's verified Git directory and worktree so a changed or missing marker cannot redirect cleanup into another checkout. `--force` permits dirty-file cleanup; it does not bypass commit preservation. Git repositories using reftable ref storage are refused because return requires files-based ref locking. The opt-in jj backend retains its existing reset behavior.
+
+Successful returns report on stderr which slot was parked and the target it was reset to. For Git, `Kept` identifies the previous commit and its protected branch or durable ref. A parked branch can be resumed with `treehouse get`, then `git switch <branch>`; an existing slot can be opened with `treehouse enter <name>` (another writable shell). A preserving tag or remote-tracking ref is not necessarily a resumable local branch. Returning never deletes branches, and repeating a return performs cleanup again.
+
+When changes were observed before reset, the report counts tracked paths (including staged changes) and untracked paths, even when Git's status configuration hides them. These are pre-cleanup observations, not an exact audit of deleted files; ignored and seeded files are not counted as untracked. Forced cleanup is labelled separately from confirmed cleanup. Optional reporting failures omit unavailable facts and never fail an otherwise safe return. jj returns use a generic slot confirmation. Damaged slots report that their reservation was cleared without a reset. If reset succeeds but saving pool state fails, the error says the slot was parked; no success banner is emitted.
 
 When you pass an explicit path, `treehouse return` can run from outside the repository because it resolves the managed pool from that worktree path.
 

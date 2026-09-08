@@ -166,6 +166,9 @@ func TestJJLeaseLifecycleAndReuse(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("return --force failed (exit %d): %s", exitCode, stderr)
 	}
+	if !strings.Contains(stderr, "Slot 1 returned to pool.") || strings.Contains(stderr, "Kept:") || strings.Contains(stderr, "git switch") {
+		t.Fatalf("incorrect jj report: %s", stderr)
+	}
 	if _, err := os.Stat(filepath.Join(lease.Path, "scratch.txt")); !os.IsNotExist(err) {
 		t.Fatal("expected scratch file to be cleaned by the return reset")
 	}

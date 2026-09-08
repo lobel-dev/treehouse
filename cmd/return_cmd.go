@@ -49,6 +49,8 @@ var returnCmd = &cobra.Command{
 			return err
 		}
 
+		var report pool.ReleaseReport
+		confirmed := false
 		conditional := cmd.Flags().Changed("if-lease-id") || cmd.Flags().Changed("if-lease-holder")
 		if conditional {
 			preconditions := pool.ReleasePreconditions{}
@@ -60,17 +62,17 @@ var returnCmd = &cobra.Command{
 			}
 			err = pool.ValidateReleasePreconditions(poolDir, wtPath, preconditions)
 			if err == nil {
-				err = confirmWorktreeReturn(wtPath)
+				confirmed, err = confirmWorktreeReturnObserved(wtPath)
 			}
 			if err == nil {
-				err = pool.ReleaseConditional(poolDir, wtPath, returnBaseBranch(wtPath), preconditions, func() error {
+				report, err = pool.ReleaseConditionalReport(poolDir, wtPath, returnBaseBranch(wtPath), preconditions, func() error {
 					return finalizeWorktreeReturn(wtPath)
 				})
 			}
 		} else {
-			err = confirmWorktreeReturn(wtPath)
+			confirmed, err = confirmWorktreeReturnObserved(wtPath)
 			if err == nil {
-				err = pool.ReleaseConditional(poolDir, wtPath, returnBaseBranch(wtPath), pool.ReleasePreconditions{}, func() error {
+				report, err = pool.ReleaseConditionalReport(poolDir, wtPath, returnBaseBranch(wtPath), pool.ReleasePreconditions{}, func() error {
 					return finalizeWorktreeReturn(wtPath)
 				})
 			}
@@ -84,10 +86,10 @@ var returnCmd = &cobra.Command{
 			return err
 		}
 		if err != nil {
-			return fmt.Errorf("failed to return worktree: %w", err)
+			return fmt.Errorf("failed to return worktree: %w", returnErrorRemedy(wtPath, err))
 		}
 
-		fmt.Fprintln(os.Stderr, "🌳 Worktree returned to pool.")
+		printReleaseReport(report, returnForce, confirmed)
 		return nil
 	},
 }
@@ -165,19 +167,25 @@ func isCmdEnvNameChar(c byte) bool {
 }
 
 func confirmWorktreeReturn(wtPath string) error {
+	_, err := confirmWorktreeReturnObserved(wtPath)
+	return err
+}
+
+func confirmWorktreeReturnObserved(wtPath string) (bool, error) {
 	if !returnForce {
 		dirty, _ := vcs.IsDirty(wtPath)
 		if dirty {
 			ok, err := ui.Confirm("Worktree has uncommitted changes. Clean and return?", true)
 			if err != nil {
-				return errReturnAbortedNonTTY
+				return false, errReturnAbortedNonTTY
 			}
 			if !ok {
-				return errReturnAborted
+				return false, errReturnAborted
 			}
+			return true, nil
 		}
 	}
-	return nil
+	return false, nil
 }
 
 func finalizeWorktreeReturn(wtPath string) error {
