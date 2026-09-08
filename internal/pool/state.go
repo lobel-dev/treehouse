@@ -279,10 +279,23 @@ func validSeedInventory(paths []string) bool {
 // recoverMissingStateEntries covers the narrow window where creating a Git
 // worktree succeeds but persisting its quarantine entry fails. Such a worktree
 // must remain unavailable even though the otherwise-valid state file omits it.
+//
+// A directory found on disk counts as already registered by filesystem
+// identity, never by path text: a pool addressed through a root spelling that
+// differs textually from the recorded one (a symlinked root such as macOS
+// /tmp -> /private/tmp, or a case alias) names the very same directories, and
+// a textual comparison would quarantine a phantom duplicate of every live slot.
 func recoverMissingStateEntries(poolDir string, s State) (State, error) {
-	known := make(map[string]bool, len(s.Worktrees))
+	registered := make([]os.FileInfo, 0, len(s.Worktrees))
 	for _, wt := range s.Worktrees {
-		known[filepath.Clean(wt.Path)] = true
+		info, err := worktreeIdentity(wt.Path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return State{}, fmt.Errorf("inspecting registered pool worktree %s: %w", wt.Path, err)
+		}
+		registered = append(registered, info)
 	}
 
 	slots, err := os.ReadDir(poolDir)
@@ -303,7 +316,11 @@ func recoverMissingStateEntries(poolDir string, s State) (State, error) {
 				continue
 			}
 			wtPath := filepath.Join(slotDir, entry.Name())
-			if known[filepath.Clean(wtPath)] {
+			known, err := isRegisteredWorktree(registered, wtPath)
+			if err != nil {
+				return State{}, err
+			}
+			if known {
 				continue
 			}
 			flavor, err := vcs.WorktreeBackendNameChecked(wtPath)
@@ -325,6 +342,42 @@ func recoverMissingStateEntries(poolDir string, s State) (State, error) {
 		}
 	}
 	return s, nil
+}
+
+// isRegisteredWorktree reports whether path is one of the worktrees the state
+// file already tracks. Registered paths that no longer exist are absent from
+// registered, so a genuinely missing entry still falls through to recovery.
+// Other filesystem errors must not turn an unverifiable path into a missing one.
+func isRegisteredWorktree(registered []os.FileInfo, path string) (bool, error) {
+	info, err := worktreeIdentity(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspecting pool worktree %s: %w", path, err)
+	}
+	for _, known := range registered {
+		if os.SameFile(known, info) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// worktreeIdentity reads the filesystem identity os.SameFile compares. It
+// stats an open handle instead of a path because a FileInfo from os.Stat
+// carries that identity lazily on Windows: os.SameFile looks it up on demand
+// and reports any failure of that lookup as "different file" rather than as an
+// error, which would present a live slot as missing and fabricate a duplicate
+// recovered lease for it. A handle's FileInfo already carries the identity, so
+// an unreadable one surfaces here as an error instead.
+func worktreeIdentity(path string) (os.FileInfo, error) {
+	dir, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	return dir.Stat()
 }
 
 // recoveredLeaseHolder marks a WorktreeEntry reconstructed by recoverCorruptState
