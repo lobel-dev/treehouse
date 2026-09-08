@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultGitHubAPIURL = "https://api.github.com/repos/kunchenguid/treehouse/releases/latest"
+	defaultGitHubAPIURL = "https://api.github.com/repos/lobel-dev/treehouse/releases/latest"
 	cacheFileName       = "update-check.json"
 	checksumsFile       = "checksums.txt"
 	cacheTTL            = 24 * time.Hour
@@ -51,6 +51,7 @@ type CheckResult struct {
 
 // CacheEntry is persisted to ~/.treehouse/update-check.json.
 type CacheEntry struct {
+	Source        string    `json:"source"`
 	CheckedAt     time.Time `json:"checked_at"`
 	LatestVersion string    `json:"latest_version"`
 }
@@ -86,6 +87,7 @@ func CheckLatest(currentVersion string) (*CheckResult, error) {
 
 	// Write cache
 	entry := CacheEntry{
+		Source:        githubAPIURL,
 		CheckedAt:     time.Now(),
 		LatestVersion: release.TagName,
 	}
@@ -111,7 +113,8 @@ func CheckLatest(currentVersion string) (*CheckResult, error) {
 }
 
 // ReadCache reads ~/.treehouse/update-check.json and returns a CheckResult
-// if the cache exists. Returns nil if missing or corrupt.
+// if the cache belongs to the current release source. Returns nil if missing,
+// corrupt, or written for a different source (including legacy unscoped caches).
 func ReadCache(currentVersion string) *CheckResult {
 	path := cachePath()
 	data, err := os.ReadFile(path)
@@ -124,7 +127,7 @@ func ReadCache(currentVersion string) *CheckResult {
 		return nil
 	}
 
-	if entry.LatestVersion == "" {
+	if entry.Source != githubAPIURL || entry.LatestVersion == "" {
 		return nil
 	}
 
@@ -150,7 +153,7 @@ func IsCacheStale(currentVersion string) bool {
 		return true
 	}
 
-	if time.Since(entry.CheckedAt) > cacheTTL {
+	if entry.Source != githubAPIURL || entry.LatestVersion == "" || time.Since(entry.CheckedAt) > cacheTTL {
 		return true
 	}
 
