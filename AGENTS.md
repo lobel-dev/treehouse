@@ -67,13 +67,11 @@ make test
 - The pool root is made self-ignoring (`.gitignore` containing `*` written inside it) because non-colocated jj repos never read `.git/info/exclude`; inside git repos the `info/exclude` entry is still added too (`config.EnsureExcluded`)
 - Self-healing: stale state entries are auto-removed, and `get` prunes stale worktree registrations before adding a worktree (the git backend via `git worktree prune`; the jj backend by forgetting a stale same-path workspace registration at add time)
 
-## Contribution Gate
+## Contribution checks
 
-- PRs to `main` must carry the no-mistakes pipeline signature and a v1 pipeline step attestation whose `head_sha` matches the current PR head (`review`, `test`, and `document` each `status=completed`). Signature-only bodies from no-mistakes older than 1.46.0 fail. The required check is `PR must be raised via no-mistakes` (`.github/workflows/no-mistakes-required.yml`), enforced by the repository `main` ruleset; only the owner/Admin role can bypass it.
-- The required check is decided by the SHARED composite action `kunchenguid/no-mistakes/.github/actions/require-no-mistakes`, pinned to an immutable commit (never `@main`, which the judged PR could edit). Bot exemptions ride as its `exempt-authors` input, deliberately not a job-level `if:`: a skipped job never reports a required context, so the PR would block on a status that can never arrive. Bumping the pin is a separate, deliberate PR.
-- `.github/scripts/no-mistakes-gate.sh` survives for ONE consumer: `release.yml`'s `release-pr-gate-status` job (see the next bullet). Its structural release-please test is therefore still load-bearing, not dead code, and `TestNoMistakesGateDecisions` drives the script directly.
-- release-please opens its PRs with `GITHUB_TOKEN`, so GitHub creates **no** workflow runs on them and the gate can never report there. `release.yml`'s `release-pr-gate-status` job publishes the required context on the release PR head by running that same gate script, so release PRs go green without an owner override.
-- A workflow backing a required check must never use `paths`/`paths-ignore`: a filtered required check never reports and blocks the PR forever. `TestPullRequestWorkflowsExcludeReleasePleaseOutputs` encodes both that rule and the opposite rule for ordinary PR workflows.
+- Use ordinary Git pushes and PRs; no-mistakes is retired in this fork.
+- CI runs formatting, vet, and tests/builds on Linux, macOS, and Windows for PRs, including stacked PRs. Run the focused acceptance checks locally before delivery.
+- Release PR outputs stay excluded from ordinary PR workflows (`TestPullRequestWorkflowsExcludeReleasePleaseOutputs`). If a required status check is introduced later, its workflow must not use a path filter that can prevent it from reporting.
 
 ## Windows Compatibility
 
