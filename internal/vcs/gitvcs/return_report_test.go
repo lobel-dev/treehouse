@@ -2,6 +2,8 @@ package gitvcs
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -24,6 +26,36 @@ func TestReturnReportOptionalFailures(t *testing.T) {
 	_, err = returnWorktreeUsing(failing, wt, "main", "", nil, nil, &report)
 	if err != nil || !observed || !report.Parked || report.ChangesKnown || report.Subject != "" || report.AttachedBranch != "feature" {
 		t.Fatalf("safe return failed optional reporting: %+v, %v", report, err)
+	}
+}
+
+func TestReturnReportChangedIdentityDoesNotClaimKeptWork(t *testing.T) {
+	for _, identity := range []string{"HEAD", "refs/heads/feature"} {
+		t.Run(identity, func(t *testing.T) {
+			wt, base, _ := setupSafeResetWorktree(t)
+			mustGit(t, wt, "switch", "-c", "feature")
+			mustGit(t, wt, "commit", "--allow-empty", "-m", "work")
+			marker := filepath.Join(wt, "scratch")
+			if err := os.WriteFile(marker, []byte("keep"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			path, err := gitPath(wt, identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, err := ReturnWorktreeReport(wt, "main", "", nil, func() error {
+				// Ordinary Git writers are tested against both locks separately.
+				// Inject a changed identity at the preparation barrier to prove
+				// the report cannot claim the earlier observation after a mismatch.
+				return os.WriteFile(path, []byte(base+"\n"), 0600)
+			})
+			if err == nil || report.Parked || report.PriorHead != "" {
+				t.Fatalf("false kept report: %+v %v", report, err)
+			}
+			if data, err := os.ReadFile(marker); err != nil || string(data) != "keep" {
+				t.Fatalf("reset after identity changed: %s %v", data, err)
+			}
+		})
 	}
 }
 

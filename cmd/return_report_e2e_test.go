@@ -23,7 +23,7 @@ func TestReturnReportsProtectedBranchE2E(t *testing.T) {
 	if code != 0 || out != "" {
 		t.Fatalf("return: code=%d stdout=%q stderr=%s", code, out, stderr)
 	}
-	for _, want := range []string{"parked, reset to main", "Kept: feature/report", "Protected work", head[:12], "git switch 'feature/report'"} {
+	for _, want := range []string{"parked, reset to main", "Kept: feature/report", "Protected work", head[:12], "git switch " + quoteReturnPath("feature/report")} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("missing %q in %s", want, stderr)
 		}
