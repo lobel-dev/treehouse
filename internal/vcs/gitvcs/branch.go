@@ -1,0 +1,179 @@
+package gitvcs
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+type BranchHolder struct {
+	Path    string
+	Locked  bool
+	Missing bool
+}
+
+type BranchState struct {
+	Local   bool
+	Origin  bool
+	Holders []BranchHolder
+}
+
+func ValidateLiteralBranch(repo, branch string) error {
+	if branch == "" || branch == "HEAD" || branch == "@" || strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("invalid literal branch name %q", branch)
+	}
+	if _, err := runGit(repo, "check-ref-format", "refs/heads/"+branch); err != nil {
+		return fmt.Errorf("invalid literal branch name %q: %w", branch, err)
+	}
+	return nil
+}
+
+func InspectBranch(repo, branch string) (BranchState, error) {
+	if err := ValidateLiteralBranch(repo, branch); err != nil {
+		return BranchState{}, err
+	}
+	var facts BranchState
+	refs, err := runGit(repo, "for-each-ref", "--format=%(refname)", "refs/heads/", "refs/remotes/origin/")
+	if err != nil {
+		return facts, err
+	}
+	for _, ref := range strings.Split(refs, "\n") {
+		if ref == "refs/heads/"+branch {
+			facts.Local = true
+		}
+		if ref == "refs/remotes/origin/"+branch {
+			facts.Origin = true
+		}
+	}
+	data, err := runGitRaw(repo, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return facts, err
+	}
+	var holder BranchHolder
+	attached := ""
+	for _, field := range strings.Split(string(data), "\x00") {
+		if field == "" {
+			if attached == "refs/heads/"+branch {
+				_, statErr := os.Stat(holder.Path)
+				if statErr != nil && !os.IsNotExist(statErr) {
+					return facts, statErr
+				}
+				holder.Missing = os.IsNotExist(statErr)
+				facts.Holders = append(facts.Holders, holder)
+			}
+			holder, attached = BranchHolder{}, ""
+			continue
+		}
+		key, value, _ := strings.Cut(field, " ")
+		switch key {
+		case "worktree":
+			holder.Path = value
+		case "branch":
+			attached = value
+		case "locked":
+			holder.Locked = true
+		}
+	}
+	return facts, nil
+}
+
+func verifiedSlotGit(repo, path string) (gitRunner, error) {
+	run, err := pinnedReturnGit(path)
+	if err != nil {
+		return nil, err
+	}
+	want, err := runGit(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return nil, err
+	}
+	actual, err := run(path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return nil, err
+	}
+	a, err := os.Stat(actual)
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.Stat(want)
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(a, b) {
+		return nil, fmt.Errorf("Git slot %s belongs to a different repository", path)
+	}
+	return run, nil
+}
+
+// WithBranchIdentity locks HEAD first, then its branch ref, matching return's
+// order. The caller holds the pool lock through callback and state persistence.
+func WithBranchIdentity(repo, path, branch string, callback func() error) error {
+	run, err := verifiedSlotGit(repo, path)
+	if err != nil {
+		return err
+	}
+	storage, err := run(path, "config", "--default", "files", "--get", "extensions.refStorage")
+	if err != nil {
+		return err
+	}
+	if storage != "files" {
+		return fmt.Errorf("branch reclamation requires files ref storage")
+	}
+	headPath, err := gitPathUsing(run, path, "HEAD")
+	if err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(headPath+".lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("cannot lock slot HEAD: %w", err)
+	}
+	defer func() { _ = lock.Close(); _ = os.Remove(headPath + ".lock") }()
+	attached, err := run(path, "symbolic-ref", "-q", "HEAD")
+	if err != nil || attached != "refs/heads/"+branch {
+		return fmt.Errorf("slot %s no longer holds branch %q", path, branch)
+	}
+	unlock, err := lockReturnRef(run, path, attached)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if _, err := run(path, "rev-parse", "--verify", "HEAD^{commit}"); err != nil {
+		return err
+	}
+	return callback()
+}
+
+// SwitchBranch leaves Git's own dirty-file and checked-out-branch guards on.
+// Treehouse holds the slot's pool ownership lock while this operation runs.
+func SwitchBranch(repo, path, branch, base string) error {
+	run, err := verifiedSlotGit(repo, path)
+	if err != nil {
+		return err
+	}
+	facts, err := InspectBranch(repo, branch)
+	if err != nil {
+		return err
+	}
+	for _, holder := range facts.Holders {
+		a, ea := filepath.EvalSymlinks(holder.Path)
+		b, eb := filepath.EvalSymlinks(path)
+		if ea != nil || eb != nil || a != b {
+			return fmt.Errorf("branch %q is held by %s; inspect git worktree list before cleanup", branch, holder.Path)
+		}
+	}
+	args := []string{"switch", "--no-guess"}
+	switch {
+	case facts.Local:
+		args = append(args, branch)
+	case facts.Origin:
+		args = append(args, "--track", "-c", branch, "refs/remotes/origin/"+branch)
+	default:
+		target, err := resolveReturnRef(run, path, base)
+		if err != nil {
+			return err
+		}
+		args = append(args, "-c", branch, target)
+	}
+	_, err = run(path, args...)
+	return err
+}

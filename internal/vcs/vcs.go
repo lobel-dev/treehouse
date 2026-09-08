@@ -610,3 +610,33 @@ func InspectGitBase(path, branch, expectedHead string) (atBase, merged, known bo
 	}
 	return gitvcs.InspectBase(path, branch, expectedHead)
 }
+
+type GitBranchState = gitvcs.BranchState
+
+func ValidateGitBranch(repo, branch string) error {
+	if BackendNameFor(repo) != "git" {
+		return fmt.Errorf("branch workflow requires Git")
+	}
+	return gitvcs.ValidateLiteralBranch(repo, branch)
+}
+
+func InspectGitBranch(repo, branch string) (GitBranchState, error) {
+	if BackendNameFor(repo) != "git" {
+		return GitBranchState{}, fmt.Errorf("branch workflow requires Git")
+	}
+	return gitvcs.InspectBranch(repo, branch)
+}
+
+func WithGitBranchIdentity(repo, path, branch string, callback func() error) error {
+	if WorktreeBackendName(path) != "git" {
+		return fmt.Errorf("target %s is not a Git slot", path)
+	}
+	return gitvcs.WithBranchIdentity(repo, path, branch, callback)
+}
+
+func SwitchGitBranch(repo, path, branch, base string) error {
+	if WorktreeBackendName(path) != "git" {
+		return fmt.Errorf("target %s is not a Git slot", path)
+	}
+	return gitvcs.SwitchBranch(repo, path, branch, base)
+}

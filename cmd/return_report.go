@@ -49,7 +49,11 @@ func printReleaseReport(report pool.ReleaseReport, forced, confirmed bool) {
 		fmt.Fprintf(os.Stderr, "Changes observed before %s: %d tracked paths, %d untracked paths.\n", mode, report.TrackedPaths, report.UntrackedPaths)
 	}
 	if report.AttachedBranch != "" {
-		fmt.Fprintf(os.Stderr, "\nResume: treehouse get, then git switch %s\n", quoteReturnPath(report.AttachedBranch))
+		command := "treehouse"
+		if rootFlag != "" {
+			command += " --root " + quoteReturnPath(rootFlag)
+		}
+		fmt.Fprintf(os.Stderr, "\nResume: %s work %s\n", command, quoteReturnPath(report.AttachedBranch))
 	}
 }
 
