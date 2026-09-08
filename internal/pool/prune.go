@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/kunchenguid/treehouse/internal/hooks"
@@ -229,28 +228,17 @@ func planPrunePool(poolDir string, resolveContext pruneContextResolver, options 
 	return planPrune(entries, resolveContext, options)
 }
 
+// prunePoolDirs is the fail-closed reading of the same scan navigation uses:
+// prune deletes, so a pool it cannot inspect must abort the whole run rather
+// than be skipped.
 func prunePoolDirs(poolRoot string) ([]string, error) {
-	entries, err := os.ReadDir(poolRoot)
+	poolDirs, failures, err := NavigationPoolDirs(poolRoot)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-
-	var poolDirs []string
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		poolDir := filepath.Join(poolRoot, entry.Name())
-		if _, err := os.Stat(stateFilePath(poolDir)); err == nil {
-			poolDirs = append(poolDirs, poolDir)
-		} else if !os.IsNotExist(err) {
-			return nil, err
-		}
+	if len(failures) > 0 {
+		return nil, failures[0].Err
 	}
-	sort.Strings(poolDirs)
 	return poolDirs, nil
 }
 

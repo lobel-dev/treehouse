@@ -17,6 +17,7 @@ import (
 )
 
 var statusJSON bool
+var statusAll, statusGlobal bool
 
 type statusJSONProcess struct {
 	PID  int32  `json:"pid"`
@@ -25,6 +26,8 @@ type statusJSONProcess struct {
 
 type statusJSONWorktree struct {
 	Name        string              `json:"name"`
+	Pool        string              `json:"pool,omitempty"`
+	Selector    string              `json:"selector,omitempty"`
 	Path        string              `json:"path"`
 	Status      string              `json:"status"`
 	Flavor      string              `json:"flavor,omitempty"`
@@ -38,6 +41,10 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show the status of all worktrees in the pool",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if statusAll || statusGlobal {
+			return globalStatus()
+		}
+
 		repoRoot, err := vcs.FindMainRepoRoot()
 		if err != nil {
 			return fmt.Errorf("not in a git or jj repository: %w", err)
@@ -124,6 +131,8 @@ var statusCmd = &cobra.Command{
 
 func init() {
 	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "Print pool status as JSON")
+	statusCmd.Flags().BoolVar(&statusAll, "all", false, "Show every managed pool under the user-level treehouse root")
+	statusCmd.Flags().BoolVar(&statusGlobal, "global", false, "Alias for --all")
 	rootCmd.AddCommand(statusCmd)
 }
 
@@ -147,6 +156,10 @@ func baseBranchLine(repoRoot string, cfg config.Config, warn func(a ...interface
 }
 
 func writeStatusJSON(worktrees []pool.WorktreeStatus) error {
+	return json.NewEncoder(os.Stdout).Encode(statusJSONRows(worktrees))
+}
+
+func statusJSONRows(worktrees []pool.WorktreeStatus) []statusJSONWorktree {
 	output := make([]statusJSONWorktree, 0, len(worktrees))
 	for _, wt := range worktrees {
 		item := statusJSONWorktree{
@@ -170,5 +183,5 @@ func writeStatusJSON(worktrees []pool.WorktreeStatus) error {
 		}
 		output = append(output, item)
 	}
-	return json.NewEncoder(os.Stdout).Encode(output)
+	return output
 }

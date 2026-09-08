@@ -166,7 +166,7 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `treehouse get`            | Acquire a worktree from the pool                     |
 | `treehouse get --lease`    | Durably lease a worktree without a subshell; print its path |
 | `treehouse lease <name>`   | Durably lease an existing pool worktree in place, without touching its files or git state |
-| `treehouse enter <name>`   | Open a subshell in an existing worktree by name (the number from `status`), even if it is in use; pool state is left untouched |
+| `treehouse enter <name\|pool/name>` | Open a subshell in an existing worktree by name (the number from `status`), even if it is in use; pool state is left untouched. A `pool/name` selector works from any directory |
 | `treehouse status`         | Show pool status (highlights leased and current worktrees) |
 | `treehouse return [path]`  | Release any lease and return a worktree only after verifying foreign processes stopped |
 | `treehouse prune`          | Dry-run removal of stale idle worktrees in the current repo pool |
@@ -175,6 +175,24 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `treehouse destroy <pool> --all` | Dry-run removal of every disposable worktree in that pool |
 | `treehouse init`           | Create a default `treehouse.toml` config file        |
 | `treehouse update`         | Update treehouse to the latest version               |
+
+### Navigation across projects
+
+Run `treehouse status --all` (or `--global`) from any directory to list worktrees across projects. Each row starts with a copyable `pool/name` selector; the pool directory name includes the repository identity, so projects with the same basename remain distinct.
+
+```sh
+treehouse status --all
+treehouse enter same-0a8cbd/1
+cd "$(treehouse enter --print-path same-0a8cbd/1)"
+```
+
+Use the selector printed by your listing. Qualified `enter` opens that existing slot without acquiring, resetting, returning, or writing pool state. Exiting leaves its files and lease intact. Local `treehouse status` and `treehouse enter 1` still select the current repository.
+
+Global navigation searches only managed pool directories immediately under the user-level root, using user config or an absolute `--root` override. It does not discover repo-relative roots or other custom roots automatically; pass their absolute root explicitly. An empty root lists no worktrees and is not created. Relative roots are rejected for global navigation.
+
+`treehouse status --all --json` stays a top-level array with the usual status fields plus `pool` (the pool directory name) and `selector` on each row. Local status JSON is unchanged. Global status reads a snapshot without healing or writing pool state.
+
+A pool that cannot be read (for example one written by a newer treehouse) never hides the others: its projects are still listed on stdout, the unreadable pool is named on stderr, and the command exits non-zero to flag that the listing is incomplete.
 
 ### Flags
 
@@ -187,6 +205,7 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `lease`   | `--lease-holder` | Optional label recorded as the lease holder (defaults to `$TREEHOUSE_LEASE_HOLDER`) |
 | `lease`   | `--json` | Print `path`, `lease_id`, `lease_holder`, `leased_at`, and `base_branch` as JSON (`base_branch` is best-effort: empty when the slot records no explicit base and its own worktree cannot resolve a default) |
 | `enter`   | `--print-path` | Print only the worktree's absolute path to stdout instead of opening a subshell (for `cd "$(treehouse enter --print-path 1)"`) |
+| `status`  | `--all`, `--global` | List worktrees across managed pools from any directory |
 | `status`  | `--json` | Print worktree status and lease metadata as JSON |
 | `return`  | `--force` | Clean, reset, and return without prompting |
 | `return`  | `--if-lease-id` | Return only if the current lease has the expected per-acquisition identity |
@@ -388,7 +407,7 @@ max_trees = 16
 ```
 
 The repo-level config takes precedence for repo-safe settings.
-`treehouse prune --all` can run without a repository, so it uses only the user-level config and does not read per-repo `treehouse.toml` files while sweeping.
+Global commands (`treehouse prune --all`, `treehouse status --all`, and a qualified `treehouse enter <pool>/<name>`) can run without a repository, so they use only the user-level config and never read per-repo `treehouse.toml` files.
 If no config is found, the default pool size is 16.
 
 ### Base branch
@@ -478,7 +497,7 @@ This is **opt-in**; the default global store is unchanged. In-project mode:
 
 - Places the pool at `<repo>/.treehouse/`, so worktrees sit next to the code and are **removed with the project** (`rm -rf <repo>` leaves no global orphan).
 - Git-ignores the pool directory automatically, so it stays out of `git add`.
-- Is not reached by `treehouse prune --all`, which only sweeps the global root; in-project pools are removed with the project instead.
+- Is not reached by global commands such as `treehouse prune --all` and `treehouse status --all`, which only cover the global root; in-project pools are removed with the project instead.
 
 ### Hooks
 
