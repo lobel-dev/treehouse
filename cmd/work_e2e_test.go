@@ -85,6 +85,18 @@ func TestWorkCreatesLiteralBranchE2E(t *testing.T) {
 	}
 }
 
+func TestWorkRefusesIndirectBranchIdentityE2E(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	path := idleReportingSlot(t, repo, home)
+	gitCmd(t, repo, "branch", "feature/saved")
+	gitCmd(t, repo, "symbolic-ref", "refs/heads/alias", "refs/heads/feature/saved")
+	gitCmd(t, path, "symbolic-ref", "HEAD", "refs/heads/alias")
+	_, stderr, code := runTreehouse(t, repo, home, []string{"SHELL=" + exitShellBin}, "work", "--no-fetch", "feature/saved")
+	if code != 1 || strings.Contains(stderr, "Reserved the existing branch slot") {
+		t.Fatalf("reclaimed indirectly attached branch without locking its alias: %d %s", code, stderr)
+	}
+}
+
 func TestWorkBranchDecisionsE2E(t *testing.T) {
 	for _, kind := range []string{"local", "origin-after-fetch", "main-checkout", "external-checkout", "leased", "dirty-reclaim", "shell-failure", "no-argument", "invalid"} {
 		t.Run(kind, func(t *testing.T) {

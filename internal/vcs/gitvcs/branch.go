@@ -128,7 +128,7 @@ func WithBranchIdentity(repo, path, branch string, callback func() error) error 
 		return fmt.Errorf("cannot lock slot HEAD: %w", err)
 	}
 	defer func() { _ = lock.Close(); _ = os.Remove(headPath + ".lock") }()
-	attached, err := run(path, "symbolic-ref", "-q", "HEAD")
+	attached, err := run(path, "symbolic-ref", "--no-recurse", "-q", "HEAD")
 	if err != nil || attached != "refs/heads/"+branch {
 		return fmt.Errorf("slot %s no longer holds branch %q", path, branch)
 	}
@@ -137,6 +137,12 @@ func WithBranchIdentity(repo, path, branch string, callback func() error) error 
 		return err
 	}
 	defer unlock()
+	// A symbolic branch would introduce another writable ref outside these
+	// locks. Reclamation requires a direct HEAD -> branch -> commit identity.
+	ref, err := run(path, "for-each-ref", "--format=%(refname) %(symref)", attached)
+	if err != nil || strings.TrimSpace(ref) != attached {
+		return fmt.Errorf("cannot verify a direct branch ref for %q", branch)
+	}
 	if _, err := run(path, "rev-parse", "--verify", "HEAD^{commit}"); err != nil {
 		return err
 	}
