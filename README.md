@@ -192,6 +192,8 @@ Global navigation searches only managed pool directories immediately under the u
 
 `treehouse status --all --json` stays a top-level array with the usual status fields plus `pool` (the pool directory name) and `selector` on each row. Local status JSON is unchanged. Global status reads a snapshot without healing or writing pool state.
 
+A pool that cannot be read (for example one written by a newer treehouse) never hides the others: its projects are still listed on stdout, the unreadable pool is named on stderr, and the command exits non-zero to flag that the listing is incomplete.
+
 ### Flags
 
 | Command   | Flag      | Description                       |

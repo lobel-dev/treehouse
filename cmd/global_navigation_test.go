@@ -103,3 +103,129 @@ func TestGlobalNavigation(t *testing.T) {
 		t.Fatal("accepted relative global root")
 	}
 }
+
+func brokenPool(t *testing.T, root, name string) string {
+	t.Helper()
+	dir := filepath.Join(root, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A state file from a newer treehouse is a hard read failure.
+	if err := os.WriteFile(filepath.Join(dir, "treehouse-state.json"), []byte(`{"version":999,"worktrees":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// One unreadable pool must not hide every other project. Global status emits
+// the healthy pools on stdout (still a valid top-level JSON array), names the
+// unreadable pool on stderr, and exits nonzero to flag the partial listing.
+func TestGlobalStatusPartialListing(t *testing.T) {
+	home, root, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	repo := setupTestRepoWithHome(t, home, "healthy")
+	out, errOut, code := runTreehouse(t, repo, home, nil, "--root", root, "get", "--lease", "--json")
+	if code != 0 {
+		t.Fatal(errOut)
+	}
+	var lease leaseJSONResult
+	if err := json.Unmarshal([]byte(out), &lease); err != nil {
+		t.Fatal(err)
+	}
+	poolDir := filepath.Dir(filepath.Dir(lease.Path))
+	navRoot := filepath.Dir(poolDir)
+	healthySelector := filepath.Base(poolDir) + "/1"
+	brokenPool(t, navRoot, "broken-pool")
+
+	out, errOut, code = runTreehouse(t, outside, home, nil, "--root", root, "status", "--all", "--json")
+	if code == 0 {
+		t.Error("a partial listing must exit nonzero")
+	}
+	var rows []struct{ Selector, Path string }
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		t.Fatalf("stdout is not a JSON array on partial success: %q (%v)", out, err)
+	}
+	if len(rows) != 1 || rows[0].Selector != healthySelector || rows[0].Path != lease.Path {
+		t.Fatalf("healthy pool missing from partial listing: %q", out)
+	}
+	if !strings.Contains(errOut, "broken-pool") {
+		t.Errorf("stderr does not identify the unreadable pool: %q", errOut)
+	}
+
+	out, errOut, code = runTreehouse(t, outside, home, nil, "--root", root, "status", "--all")
+	if code == 0 {
+		t.Error("a partial human listing must exit nonzero")
+	}
+	if !strings.Contains(out, healthySelector) {
+		t.Errorf("healthy pool missing from partial human listing: %q", out)
+	}
+	if !strings.Contains(errOut, "broken-pool") {
+		t.Errorf("stderr does not identify the unreadable pool: %q", errOut)
+	}
+
+	// An all-healthy root still succeeds, so the nonzero exit means "incomplete".
+	if err := os.RemoveAll(filepath.Join(navRoot, "broken-pool")); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, code = runTreehouse(t, outside, home, nil, "--root", root, "status", "--all", "--json"); code != 0 {
+		t.Fatalf("healthy root must exit zero: %s", errOut)
+	}
+}
+
+// A qualified selector is answered from the user-level root, so its not-found
+// guidance must name commands that work outside any repository. Local guidance
+// is unchanged.
+func TestEnterNotFoundGuidance(t *testing.T) {
+	home, root, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	repo := setupTestRepoWithHome(t, home, "guide")
+	out, errOut, code := runTreehouse(t, repo, home, nil, "--root", root, "get", "--lease", "--json")
+	if code != 0 {
+		t.Fatal(errOut)
+	}
+	var lease leaseJSONResult
+	if err := json.Unmarshal([]byte(out), &lease); err != nil {
+		t.Fatal(err)
+	}
+	poolDir := filepath.Dir(filepath.Dir(lease.Path))
+	poolName := filepath.Base(poolDir)
+
+	emptyPool := filepath.Join(filepath.Dir(poolDir), "empty-pool")
+	if err := os.MkdirAll(emptyPool, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(emptyPool, "treehouse-state.json"), []byte(`{"version":4,"worktrees":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		dir      string
+		selector string
+	}{
+		{"unknown slot", outside, poolName + "/99"},
+		{"empty pool", outside, "empty-pool/1"},
+		{"unknown pool", outside, "absent-pool/1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errOut, code := runTreehouse(t, tc.dir, home, nil, "--root", root, "enter", "--print-path", tc.selector)
+			if code == 0 {
+				t.Fatal("expected failure")
+			}
+			if !strings.Contains(errOut, "treehouse status --all") {
+				t.Errorf("qualified guidance does not name a globally usable command: %q", errOut)
+			}
+			if strings.Contains(errOut, "treehouse get") {
+				t.Errorf("qualified guidance suggests 'treehouse get', which cannot resolve the pool from cwd: %q", errOut)
+			}
+		})
+	}
+
+	t.Run("local guidance preserved", func(t *testing.T) {
+		_, errOut, code := runTreehouse(t, repo, home, nil, "--root", root, "enter", "--print-path", "99")
+		if code == 0 {
+			t.Fatal("expected failure")
+		}
+		if !strings.Contains(errOut, "treehouse status") || strings.Contains(errOut, "--all") {
+			t.Errorf("local guidance changed: %q", errOut)
+		}
+	})
+}

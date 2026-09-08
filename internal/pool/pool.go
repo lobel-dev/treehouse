@@ -754,14 +754,17 @@ func List(poolDir string) ([]WorktreeStatus, error) {
 			return err
 		}
 
-		result = describeWorktrees(state)
+		snapshot, _ := process.NewSnapshot()
+		result = describeWorktrees(state, snapshot)
 		return nil
 	})
 
 	return result, err
 }
 
-func describeWorktrees(state State) []WorktreeStatus {
+// describeWorktrees classifies a pool's slots against one already-read process
+// snapshot, so a caller listing many pools pays for the process table once.
+func describeWorktrees(state State, snapshot process.Snapshot) []WorktreeStatus {
 	var result []WorktreeStatus
 	cwd, _ := os.Getwd()
 
@@ -776,7 +779,7 @@ func describeWorktrees(state State) []WorktreeStatus {
 			Flavor: vcs.WorktreeBackendName(wt.Path),
 		}
 
-		procs, _ := process.FindProcessesInWorktree(wt.Path)
+		procs, _ := snapshot.ProcessesInWorktree(wt.Path)
 		ws.Processes = procs
 
 		if wt.Leased {

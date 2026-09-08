@@ -48,24 +48,27 @@ func enterRunE(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
 	var worktrees []pool.WorktreeStatus
-	var err error
-	if strings.ContainsAny(name, "/\\:") {
-		var poolName string
+	var poolName string
+	qualified := strings.ContainsAny(name, "/\\:")
+	if qualified {
+		var err error
 		poolName, name, err = parseGlobalSelector(name)
 		if err != nil {
 			return err
 		}
-		var root string
-		root, err = globalNavigationRoot()
+		root, err := globalNavigationRoot()
 		if err != nil {
 			return err
 		}
 		poolDir := filepath.Join(root, poolName)
 		info, statErr := os.Lstat(poolDir)
 		if statErr != nil || !info.IsDir() || !pool.IsPoolDir(poolDir) {
-			return fmt.Errorf("unknown pool %q under %s", poolName, root)
+			return fmt.Errorf("unknown pool %q under %s. Run 'treehouse status --all' to list pools", poolName, root)
 		}
 		worktrees, err = pool.ListSnapshot(poolDir)
+		if err != nil {
+			return err
+		}
 	} else {
 		repoRoot, err := vcs.FindRepoRoot()
 		if err != nil {
@@ -86,10 +89,6 @@ func enterRunE(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-
-	}
-	if err != nil {
-		return err
 	}
 
 	var target *pool.WorktreeStatus
@@ -103,6 +102,16 @@ func enterRunE(cmd *cobra.Command, args []string) error {
 		names := make([]string, len(worktrees))
 		for i, wt := range worktrees {
 			names[i] = wt.Name
+		}
+		// A qualified selector is answered from the user-level root, so the
+		// caller need not be in any repository - and 'treehouse status' and
+		// 'treehouse get' would both fail there. Point at the global listing
+		// instead, and drop 'get': the pool is not resolvable from cwd.
+		if qualified {
+			if len(names) == 0 {
+				return fmt.Errorf("no worktree named %q: pool %q is empty. Run 'treehouse status --all' for details", name, poolName)
+			}
+			return fmt.Errorf("no worktree named %q in pool %q (available: %s). Run 'treehouse status --all' for details", name, poolName, strings.Join(names, ", "))
 		}
 		if len(names) == 0 {
 			return fmt.Errorf("no worktree named %q: the pool is empty. Run 'treehouse get' to create one", name)
