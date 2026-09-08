@@ -1,9 +1,7 @@
 package ui
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -13,10 +11,7 @@ func Confirm(message string, defaultYes bool) (bool, error) {
 		hint = "y/N"
 	}
 
-	fmt.Fprintf(os.Stderr, "%s [%s] ", message, hint)
-
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
+	input, err := ReadLine(fmt.Sprintf("%s [%s] ", message, hint))
 	if err != nil {
 		return defaultYes, err
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -17,6 +18,32 @@ type BranchState struct {
 	Local   bool
 	Origin  bool
 	Holders []BranchHolder
+}
+
+func ListWorkBranches(repo string) ([]string, error) {
+	out, err := runGit(repo, "for-each-ref", "--format=%(refname)", "refs/heads/", "refs/remotes/origin/")
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, ref := range strings.Split(out, "\n") {
+		var name string
+		switch {
+		case strings.HasPrefix(ref, "refs/heads/"):
+			name = strings.TrimPrefix(ref, "refs/heads/")
+		case strings.HasPrefix(ref, "refs/remotes/origin/"):
+			name = strings.TrimPrefix(ref, "refs/remotes/origin/")
+		}
+		if name != "" && name != "HEAD" {
+			names[name] = true
+		}
+	}
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result, nil
 }
 
 func ValidateLiteralBranch(repo, branch string) error {

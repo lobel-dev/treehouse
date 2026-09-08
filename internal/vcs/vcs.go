@@ -613,6 +613,13 @@ func InspectGitBase(path, branch, expectedHead string) (atBase, merged, known bo
 
 type GitBranchState = gitvcs.BranchState
 
+func ListGitWorkBranches(repo string) ([]string, error) {
+	if BackendNameFor(repo) != "git" {
+		return nil, fmt.Errorf("branch selection requires Git")
+	}
+	return gitvcs.ListWorkBranches(repo)
+}
+
 func VerifyGitSlotRepository(repo, path string) error {
 	if WorktreeBackendName(path) != "git" {
 		return fmt.Errorf("target %s is not a Git slot", path)

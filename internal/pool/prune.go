@@ -65,6 +65,12 @@ type PruneAllResult struct {
 
 // PruneOptions controls dry-run, orphan, and hook behavior for prune operations.
 type PruneOptions struct {
+	// ReadOnlySnapshot prevents preview from healing or writing pool state.
+	// It applies only to DryRun, for cancellable interactive previews.
+	ReadOnlySnapshot bool
+	// CandidatePaths limits execution to the previewed paths. Nil is the
+	// existing unrestricted scope; an empty non-nil slice selects nothing.
+	CandidatePaths []string
 	// DryRun reports candidates and byte counts without deleting worktrees.
 	DryRun bool
 	// PruneOrphans includes backing-repository-missing linked worktrees as
@@ -223,6 +229,13 @@ func prunePool(poolDir string, options PruneOptions, resolveContext pruneContext
 }
 
 func planPrunePool(poolDir string, resolveContext pruneContextResolver, options PruneOptions) (prunePlan, error) {
+	if options.DryRun && options.ReadOnlySnapshot {
+		state, err := ReadState(poolDir)
+		if err != nil {
+			return prunePlan{}, err
+		}
+		return planPrune(state.Worktrees, resolveContext, options)
+	}
 	entries, err := pruneSnapshot(poolDir)
 	if err != nil {
 		return prunePlan{}, err
@@ -289,6 +302,18 @@ func planPrune(entries []WorktreeEntry, resolveContext pruneContextResolver, opt
 		Planned: make(map[string]plannedPruneWorktree),
 	}
 	for _, wt := range entries {
+		if options.CandidatePaths != nil {
+			matched := false
+			for _, path := range options.CandidatePaths {
+				if path == wt.Path {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
 		worktree, skipped, stale, context, err := analyzePruneCandidate(resolveContext, wt, options)
 		if err != nil {
 			return prunePlan{}, err

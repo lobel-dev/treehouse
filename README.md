@@ -20,24 +20,39 @@ Or... are you starting a new worktree for every agent session, losing all your i
 
 Treehouse helps you manage a pool of reusable, isolated worktrees so each of your agents gets its own environment instantly - no cloning, no conflicts, no coordination overhead.
 
-- **Instant isolation** - `treehouse` puts you into a clean worktree with zero hassel.
+- **Simple choices** - `treehouse` opens a menu for starting, resuming, opening, and cleaning up worktrees.
 - **Reusable worktrees** - worktrees are preserved in a pool when you're done, with dependencies and build cache intact, ready for the next agent.
 - **Conflict-free** - automatic detection of in-use worktrees and your agents never step on each other's toes.
 
 ## Quick Start
 
+From your project, run:
+
 ```sh
-$ cd myproject                 # start in your repo as usual
-$ treehouse                    # get a worktree and drop into a subshell
-🌳 Entered worktree at ~/.treehouse/myproject-a1b2c3/1/myproject. Type 'exit' to return.
-
-# You're now in an isolated worktree.
-# Run your AI agent, make changes, do whatever you need.
-
-$ exit                         # exit the subshell when you're done
-🌳 Terminated lingering processes: opencode (pid 12345)
-🌳 Slot 1 parked, reset to main.
+treehouse
 ```
+
+Choose a number from the menu:
+
+- **Continue working on a branch** - choose your branch and get back to work.
+- **Start a new branch** - enter its name; Treehouse prepares the tree and opens your shell.
+- **Open an existing tree** - pick a tree by its branch and status. Its files stay as you leave them.
+- **Clean up unused trees** - review the trees and space to reclaim, then confirm removal.
+
+Type `exit` to return to the menu and choose different work. Choose `q` to leave Treehouse.
+Unfinished changes are kept by default on exit; discarding them requires answering yes.
+
+Two shortcuts take you directly to a picker or cleanup:
+
+```sh
+treehouse enter
+treehouse prune
+```
+
+The menu appears when running in a terminal. Scripts can keep using `treehouse get`,
+`work <branch>`, and the other explicit commands. Bare `treehouse` with redirected
+input or output keeps its existing `get` behavior. `treehouse menu` explicitly opens
+the menu. With the jj backend, the home screen offers trees instead of Git branches.
 
 ## Install
 
@@ -97,7 +112,7 @@ The default treehouse root is `~/.treehouse/`.
 You can instead keep the pool [inside the project](#in-project-storage) with `--root .`, so it lives next to the code and is removed with the project.
 
 ```
-  treehouse
+  treehouse get
       │
       ▼
   Find repo root
@@ -155,14 +170,15 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 - **Safe pruning** - By default, `treehouse prune` removes only idle managed worktrees whose HEAD is already merged into the default branch and whose working tree is clean.
   `treehouse prune --all` applies the same safety checks across every managed pool under the user-level treehouse root.
   Backing-repository-missing orphans are reported by default; `--prune-orphans` includes them as unverified prune candidates, and `--yes` is required before deletion.
-  It is a dry run unless you pass `--yes`.
+  In a terminal it previews and asks for confirmation; with redirected input or output it stays a dry run unless you pass `--yes`.
 - **Self-healing get** - `treehouse get` prunes stale git worktree bookkeeping (e.g. left behind by a crashed or forcibly removed worktree) before adding a new worktree, so a prunable registration never wedges the pool with a "missing but already registered worktree" error.
 
 ## CLI Reference
 
 | Command                    | Description                                          |
 | -------------------------- | ---------------------------------------------------- |
-| `treehouse`                | Get a worktree and open a subshell (alias for `get`) |
+| `treehouse`                | Open the interactive home screen (or `get` when input/output is redirected) |
+| `treehouse enter` | Pick an existing tree and open a shell |
 | `treehouse get`            | Acquire a worktree from the pool                     |
 | `treehouse work <branch>`  | Resume or create a Git branch in a pooled worktree   |
 | `treehouse get --lease`    | Durably lease a worktree without a subshell; print its path |
@@ -172,8 +188,8 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `treehouse ls` | Show a human table of slots, current branches or advisory history, state, and next steps |
 | `treehouse return [path]`  | Release any lease and return a worktree only after verifying foreign processes stopped |
 | `treehouse return --slot <name>` | Return a named slot in the current pool |
-| `treehouse prune`          | Dry-run removal of stale idle worktrees in the current repo pool |
-| `treehouse prune --all`    | Dry-run removal of stale idle worktrees across every managed pool |
+| `treehouse prune`          | Preview and confirm cleanup in the current repo pool; dry run when redirected |
+| `treehouse prune --all`    | Preview and confirm cleanup across managed pools; dry run when redirected |
 | `treehouse destroy <path>` | Dry-run removal of one worktree (safe by default; `--yes` to execute) |
 | `treehouse destroy --slot <name>` | Preview removal of a named current-pool slot; leased removal still requires its exact path |
 | `treehouse destroy <pool> --all` | Dry-run removal of every disposable worktree in that pool |
@@ -390,9 +406,9 @@ Bulk `destroy --all` and prune leave recovered entries alone.
 
 ### Pruning stale worktrees and orphans
 
-`treehouse prune` is a dry run by default.
-By default, it lists stale idle managed worktrees that would be deleted and shows the reclaimable disk space.
-Pass `treehouse prune --yes` to delete those worktrees.
+`treehouse prune` lists removable trees and reclaimable space, then asks before deleting in a terminal. Press Enter or answer no to cancel; files and pool state are kept. Checking merge safety refreshes origin.
+Only paths shown in that preview can be removed, and Treehouse checks their safety again after confirmation.
+With redirected input or output it remains a dry run. Pass `treehouse prune --yes` to delete eligible trees without prompting.
 
 By default, prune only inspects the current repository's pool and must be run inside a repository.
 Pass `treehouse prune --all` or `treehouse prune --global` to inspect every managed pool under the user-level treehouse root from any directory.

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/fatih/color"
+	"github.com/kunchenguid/treehouse/internal/ui"
 	"github.com/kunchenguid/treehouse/internal/updater"
 	"github.com/spf13/cobra"
 )
@@ -26,11 +27,18 @@ var rootCmd = &cobra.Command{
 	Use:   "treehouse",
 	Short: "Manage a pool of git worktrees for parallel AI agent workflows",
 	Long: `Treehouse maintains a pool of reusable, pre-warmed git worktrees
-so that multiple AI coding agents can work on the same repo in parallel.`,
+so that multiple AI coding agents can work on the same repo in parallel.
+
+Run treehouse in a terminal to choose a branch or tree, start new work, or
+clean up unused trees. Type exit in a tree to return to the menu.
+With redirected input or output, bare treehouse keeps the get behavior.`,
 	Version:       version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 && ui.IsInteractive() {
+			return interactiveHome()
+		}
 		return getRunE(cmd, args)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {

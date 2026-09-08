@@ -151,9 +151,9 @@ func finishAcquiredWorktree(repoRoot, poolDir, wtPath string, cfg config.Config)
 	if dirty {
 		fmt.Fprintf(os.Stderr, "🌳 Worktree has uncommitted changes.\n")
 
-		ok, promptErr := ui.Confirm("Clean worktree and return to pool?", true)
+		ok, promptErr := ui.Confirm("Discard uncommitted changes and return to pool?", false)
 		if promptErr != nil || !ok {
-			fmt.Fprintf(os.Stderr, "🌳 Worktree left dirty. Use treehouse return --force %s to clean it later.\n", quoteReturnPath(wtPath))
+			fmt.Fprintln(os.Stderr, "🌳 Worktree left dirty; your changes are kept. Reopen it with treehouse enter.")
 			return errReturnAborted
 		}
 	}
