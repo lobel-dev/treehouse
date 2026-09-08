@@ -15,12 +15,6 @@ type PoolError struct {
 	Err     error
 }
 
-func (e PoolError) Error() string {
-	return filepath.Base(e.PoolDir) + ": " + e.Err.Error()
-}
-
-func (e PoolError) Unwrap() error { return e.Err }
-
 // PoolSnapshot is one pool's read-only listing under a navigation root.
 type PoolSnapshot struct {
 	PoolDir   string
@@ -59,7 +53,7 @@ func NavigationPoolDirs(root string) ([]string, []PoolError, error) {
 }
 
 // ListSnapshotAll lists every managed pool directly under root without healing
-// or writing pool state, reading the process table once for the whole walk.
+// or writing pool state, sharing one process reading across the whole walk.
 // Navigation is read-only, so a pool that cannot be read is returned as a
 // failure instead of hiding every other project; only a root-level failure is
 // an error.
@@ -69,10 +63,10 @@ func ListSnapshotAll(root string) ([]PoolSnapshot, []PoolError, error) {
 		return nil, nil, err
 	}
 
-	snapshot, _ := process.NewSnapshot()
+	processSnapshot := lazyProcessSnapshot()
 	pools := make([]PoolSnapshot, 0, len(dirs))
 	for _, dir := range dirs {
-		worktrees, err := listSnapshot(dir, snapshot)
+		worktrees, err := listSnapshot(dir, processSnapshot)
 		if err != nil {
 			failures = append(failures, PoolError{PoolDir: dir, Err: err})
 			continue
@@ -87,11 +81,10 @@ func ListSnapshotAll(root string) ([]PoolSnapshot, []PoolError, error) {
 // Atomic state replacement permits readers to observe a complete snapshot
 // without creating a lock file. Lifecycle operations retain their own locks.
 func ListSnapshot(poolDir string) ([]WorktreeStatus, error) {
-	snapshot, _ := process.NewSnapshot()
-	return listSnapshot(poolDir, snapshot)
+	return listSnapshot(poolDir, lazyProcessSnapshot())
 }
 
-func listSnapshot(poolDir string, snapshot process.Snapshot) ([]WorktreeStatus, error) {
+func listSnapshot(poolDir string, processSnapshot func() process.Snapshot) ([]WorktreeStatus, error) {
 	state, err := ReadState(poolDir)
 	if err != nil {
 		return nil, err
@@ -110,5 +103,5 @@ func listSnapshot(poolDir string, snapshot process.Snapshot) ([]WorktreeStatus, 
 		}
 	}
 	state.Worktrees = existing
-	return describeWorktrees(state, snapshot), nil
+	return describeWorktrees(state, processSnapshot), nil
 }

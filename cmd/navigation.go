@@ -26,9 +26,10 @@ func parseGlobalSelector(selector string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid worktree selector %q: expected pool/name", selector)
 	}
 	for _, part := range parts {
-		// Reject both platforms' separators, drive/stream syntax and path aliases,
-		// even when the command is running on the other platform.
-		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, "\\:\x00") || strings.TrimRight(part, " .") != part {
+		// Reject traversal, the other platform's separator and path aliases. The
+		// component set is platform-correct so a listing never prints a selector
+		// its own enter refuses; see invalidSelectorChars.
+		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, invalidSelectorChars) || strings.TrimRight(part, " .") != part {
 			return "", "", fmt.Errorf("invalid worktree selector %q: expected pool/name", selector)
 		}
 	}

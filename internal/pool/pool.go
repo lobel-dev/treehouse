@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/kunchenguid/treehouse/internal/hooks"
@@ -754,22 +755,36 @@ func List(poolDir string) ([]WorktreeStatus, error) {
 			return err
 		}
 
-		snapshot, _ := process.NewSnapshot()
-		result = describeWorktrees(state, snapshot)
+		result = describeWorktrees(state, lazyProcessSnapshot())
 		return nil
 	})
 
 	return result, err
 }
 
-// describeWorktrees classifies a pool's slots against one already-read process
-// snapshot, so a caller listing many pools pays for the process table once.
-func describeWorktrees(state State, snapshot process.Snapshot) []WorktreeStatus {
+// lazyProcessSnapshot reads the process table at most once, and only if a slot
+// actually needs classifying, so a caller listing many pools pays for it once
+// and a caller with no slots does not pay for it at all.
+func lazyProcessSnapshot() func() process.Snapshot {
+	var once sync.Once
+	var snapshot process.Snapshot
+	return func() process.Snapshot {
+		once.Do(func() { snapshot, _ = process.NewSnapshot() })
+		return snapshot
+	}
+}
+
+// describeWorktrees classifies a pool's slots against one shared process
+// snapshot. A slot mid-destruction is hidden, but only while its reservation is
+// live: healState clears a stale one before local status gets here, so a
+// read-only listing that cannot heal applies the same predicate to stay
+// consistent instead of dropping a worktree an interrupted prune left behind.
+func describeWorktrees(state State, processSnapshot func() process.Snapshot) []WorktreeStatus {
 	var result []WorktreeStatus
 	cwd, _ := os.Getwd()
 
 	for _, wt := range state.Worktrees {
-		if wt.Destroying {
+		if wt.Destroying && !staleOwnerReservation(wt) {
 			continue
 		}
 		ws := WorktreeStatus{
@@ -779,7 +794,7 @@ func describeWorktrees(state State, snapshot process.Snapshot) []WorktreeStatus 
 			Flavor: vcs.WorktreeBackendName(wt.Path),
 		}
 
-		procs, _ := snapshot.ProcessesInWorktree(wt.Path)
+		procs, _ := processSnapshot().ProcessesInWorktree(wt.Path)
 		ws.Processes = procs
 
 		if wt.Leased {
@@ -825,7 +840,7 @@ func healState(poolDir string, state State) (State, error) {
 	var healed []WorktreeEntry
 	for _, wt := range state.Worktrees {
 		if _, err := os.Stat(wt.Path); err == nil {
-			if wt.OwnerPID != 0 && !ownerAlive(wt) {
+			if staleOwnerReservation(wt) {
 				wt.OwnerPID = 0
 				wt.OwnerStartedAt = 0
 				wt.Destroying = false
@@ -861,6 +876,14 @@ func removeAuthenticatedStaleJJSeedState(poolDir string, state State) error {
 		}
 	}
 	return nil
+}
+
+// staleOwnerReservation reports whether a slot carries an owner reservation
+// whose owner is gone. It is the single definition of "stale" shared by
+// healState, which clears such a reservation, and read-only listings, which
+// cannot write but must classify the slot the same way.
+func staleOwnerReservation(wt WorktreeEntry) bool {
+	return wt.OwnerPID != 0 && !ownerAlive(wt)
 }
 
 func ownerAlive(wt WorktreeEntry) bool {

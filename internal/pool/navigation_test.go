@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/kunchenguid/treehouse/internal/process"
 )
 
 func writeTestPool(t *testing.T, root, name string, state State) string {
@@ -99,4 +101,107 @@ func TestPrunePoolDirs_FailsClosedOnPoolNavigationTolerates(t *testing.T) {
 	if len(pruneDirs) != len(dirs) {
 		t.Fatalf("prune and navigation disagree on discovery: %v vs %v", pruneDirs, dirs)
 	}
+}
+
+// An interrupted prune/destroy persists Destroying plus an owner reservation,
+// then runs its hooks outside the state lock. If it dies there, the slot and
+// the user's work survive on disk, and local status shows the slot because
+// healState clears the dead reservation in memory. A read-only global listing
+// cannot heal, so it must apply the same staleness rule instead of silently
+// dropping a real worktree - navigation exists for exactly this recovery case.
+func TestListSnapshot_ExposesStaleDestroyingSlotAndHidesActiveOne(t *testing.T) {
+	root := t.TempDir()
+	livePID := int32(os.Getpid())
+	liveStart, ok := process.StartedAt(livePID)
+	if !ok {
+		t.Skip("cannot read this process's start time")
+	}
+
+	poolDir := writeTestPool(t, root, "interrupted", State{
+		Version: stateVersion,
+		Worktrees: []WorktreeEntry{
+			{Name: "1", Path: filepath.Join(root, "interrupted", "1"), Destroying: true, OwnerPID: deadPID(t), OwnerStartedAt: 1},
+			{Name: "2", Path: filepath.Join(root, "interrupted", "2"), Destroying: true, OwnerPID: livePID, OwnerStartedAt: liveStart},
+			{Name: "3", Path: filepath.Join(root, "interrupted", "3")},
+		},
+	})
+
+	got, err := ListSnapshot(poolDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, wt := range got {
+		names[wt.Name] = true
+	}
+	if !names["1"] {
+		t.Error("a slot whose destroy reservation is stale must be listed, not hidden")
+	}
+	if names["2"] {
+		t.Error("a slot whose destruction is genuinely active must stay hidden")
+	}
+	if !names["3"] {
+		t.Error("an ordinary slot must be listed")
+	}
+
+	// The global walk must agree with the single-pool read.
+	pools, failures, err := ListSnapshotAll(root)
+	if err != nil || len(failures) != 0 || len(pools) != 1 {
+		t.Fatalf("ListSnapshotAll: pools=%v failures=%v err=%v", pools, failures, err)
+	}
+	if len(pools[0].Worktrees) != len(got) {
+		t.Fatalf("global walk disagrees with single-pool read: %+v vs %+v", pools[0].Worktrees, got)
+	}
+
+	// Local List heals first, so it must reach the same set of slots.
+	local, err := List(poolDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(local) != len(got) {
+		t.Fatalf("local status and global listing disagree: %+v vs %+v", local, got)
+	}
+}
+
+// Reading the process table is expensive, so a pool with nothing to classify
+// must not read it at all.
+func TestDescribeWorktrees_SkipsProcessScanWhenNothingToClassify(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state State
+		want  bool
+	}{
+		{"no slots", State{Version: stateVersion}, false},
+		{"only actively destroying slots", State{
+			Version:   stateVersion,
+			Worktrees: []WorktreeEntry{{Name: "1", Path: t.TempDir(), Destroying: true}},
+		}, false},
+		{"a classifiable slot", State{
+			Version:   stateVersion,
+			Worktrees: []WorktreeEntry{{Name: "1", Path: t.TempDir()}},
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var scanned bool
+			describeWorktrees(tc.state, func() process.Snapshot {
+				scanned = true
+				return process.Snapshot{}
+			})
+			if scanned != tc.want {
+				t.Fatalf("process table read = %v, want %v", scanned, tc.want)
+			}
+		})
+	}
+}
+
+// deadPID returns a PID that is not running, so a reservation naming it is stale.
+func deadPID(t *testing.T) int32 {
+	t.Helper()
+	for pid := int32(30000); pid < 40000; pid++ {
+		if !process.Exists(pid) {
+			return pid
+		}
+	}
+	t.Skip("no free PID found")
+	return 0
 }
