@@ -4,6 +4,7 @@ import "strings"
 
 // WorktreeFacts are optional observations, never permission to reset or delete.
 type WorktreeFacts struct {
+	Head              string
 	Branch            string
 	IdentityKnown     bool
 	PreservingRef     string
@@ -32,7 +33,7 @@ func inspectWorktreeUsing(run gitRunner, path string) WorktreeFacts {
 	if identity != "HEAD" && !strings.HasPrefix(identity, "refs/heads/") {
 		return WorktreeFacts{}
 	}
-	facts := WorktreeFacts{IdentityKnown: true}
+	facts := WorktreeFacts{Head: head, IdentityKnown: true}
 	if strings.HasPrefix(identity, "refs/heads/") {
 		facts.Branch = strings.TrimPrefix(identity, "refs/heads/")
 	}
@@ -58,4 +59,44 @@ func inspectWorktreeUsing(run gitRunner, path string) WorktreeFacts {
 		return WorktreeFacts{}
 	}
 	return facts
+}
+
+// LocalBranchExists distinguishes a missing exact local ref from a failed read.
+func LocalBranchExists(path, branch string) (bool, error) {
+	run, err := pinnedReturnGit(path)
+	if err != nil {
+		return false, err
+	}
+	refs, err := run(path, "for-each-ref", "--format=%(refname)", "refs/heads/")
+	if err != nil {
+		return false, err
+	}
+	for _, ref := range strings.Split(refs, "\n") {
+		if ref == "refs/heads/"+branch {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// InspectBase compares the same inspected HEAD with an immutable target, for
+// human labels only. Errors and concurrent HEAD changes leave the result unknown.
+func InspectBase(path, branch, expectedHead string) (atBase, merged, known bool) {
+	run, err := pinnedReturnGit(path)
+	if err != nil || expectedHead == "" {
+		return
+	}
+	target, err := resolveReturnRef(run, path, branch)
+	if err != nil {
+		return
+	}
+	outside, err := run(path, "rev-list", "--count", target+".."+expectedHead)
+	if err != nil {
+		return
+	}
+	current, err := run(path, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil || current != expectedHead {
+		return
+	}
+	return current == target, outside == "0", true
 }

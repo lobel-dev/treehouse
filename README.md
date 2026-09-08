@@ -168,6 +168,7 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `treehouse lease <name>`   | Durably lease an existing pool worktree in place, without touching its files or git state |
 | `treehouse enter <name\|pool/name>` | Open a subshell in an existing worktree by name (the number from `status`), even if it is in use; pool state is left untouched. A `pool/name` selector works from any directory |
 | `treehouse status`         | Show pool status (highlights leased and current worktrees) |
+| `treehouse ls` | Show a human table of slots, current branches or advisory history, state, and next steps |
 | `treehouse return [path]`  | Release any lease and return a worktree only after verifying foreign processes stopped |
 | `treehouse prune`          | Dry-run removal of stale idle worktrees in the current repo pool |
 | `treehouse prune --all`    | Dry-run removal of stale idle worktrees across every managed pool |
@@ -185,6 +186,10 @@ treehouse status --all
 treehouse enter same-0a8cbd/1
 cd "$(treehouse enter --print-path same-0a8cbd/1)"
 ```
+
+`treehouse ls` shows `SLOT`, `BRANCH`, `STATE`, and `NEXT` columns. It supports `--all` / `--global` and `--json` with the same JSON schema as `status`; `status` keeps its existing human layout. All `ls` listings read snapshots without healing or writing pool state, and global listings report unreadable pools on stderr while still showing healthy pools.
+
+After a successful Git return, `ls` can show the previous attached branch as **last used**. This is history: the parked slot is detached, the branch is free to be checked out elsewhere, and resuming it need not reuse that slot. History never selects a lifecycle target or overrides dirty, in-use, leased, damaged, or unmerged state. A parked label is shown only after checking the current HEAD against the slot's base. Acquisition and a repeated detached return clear history; deleting the branch hides a proven-stale hint in snapshots and clears it during existing state healing. An unavailable repository is not proof that the branch disappeared. No history field is added to public JSON. jj rows omit Git history and preservation claims.
 
 Use the selector printed by your listing. Qualified `enter` opens that existing slot without acquiring, resetting, returning, or writing pool state. Exiting leaves its files and lease intact. Local `treehouse status` and `treehouse enter 1` still select the current repository.
 

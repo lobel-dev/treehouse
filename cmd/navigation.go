@@ -36,7 +36,9 @@ func parseGlobalSelector(selector string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
-func globalStatus() error {
+func globalStatus() error { return globalStatusWithTable(false) }
+
+func globalStatusWithTable(table bool) error {
 	root, err := globalNavigationRoot()
 	if err != nil {
 		return err
@@ -61,6 +63,10 @@ func globalStatus() error {
 	// costs the user navigation to every other project.
 	if statusJSON {
 		if err := json.NewEncoder(os.Stdout).Encode(output); err != nil {
+			return err
+		}
+	} else if table {
+		if err := writeLSTable(pools, true); err != nil {
 			return err
 		}
 	} else if len(output) > 0 {

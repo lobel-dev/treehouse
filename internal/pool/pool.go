@@ -28,9 +28,11 @@ const (
 
 // WorktreeStatus describes one managed worktree as reported by List.
 type WorktreeStatus struct {
-	Name   string
-	Path   string
-	Status string
+	LastBranch string
+	BaseBranch string
+	Name       string
+	Path       string
+	Status     string
 	// Flavor is the backend the worktree's own marker identifies ("git" or
 	// "jj"), independent of what the repository currently selects.
 	Flavor    string
@@ -382,6 +384,7 @@ func acquire(repoRoot, poolDir string, poolSize int, postCreate []string, opts a
 			if err := markAcquired(&state.Worktrees[i], opts); err != nil {
 				return err
 			}
+			state.Worktrees[i].LastBranch = ""
 			acquired = leaseInfoFromEntry(state.Worktrees[i], branch)
 			if err := persistState(poolDir, state); err != nil {
 				// Preserve the completed seed inventory outside the mutable
@@ -708,6 +711,7 @@ func ReleaseConditionalReport(poolDir, worktreePath, baseBranch string, precondi
 				requested = ""
 			}
 			wt.BaseBranch = requested
+			wt.LastBranch = observed.AttachedBranch
 		} else if beforeReset != nil {
 			if err := beforeReset(); err != nil {
 				return err
@@ -827,10 +831,12 @@ func describeWorktrees(state State, processSnapshot func() process.Snapshot) []W
 			continue
 		}
 		ws := WorktreeStatus{
-			Name:   wt.Name,
-			Path:   wt.Path,
-			Status: StatusAvailable,
-			Flavor: vcs.WorktreeBackendName(wt.Path),
+			LastBranch: visibleLastBranch(wt),
+			BaseBranch: wt.BaseBranch,
+			Name:       wt.Name,
+			Path:       wt.Path,
+			Status:     StatusAvailable,
+			Flavor:     vcs.WorktreeBackendName(wt.Path),
 		}
 
 		procs, _ := processSnapshot().ProcessesInWorktree(wt.Path)
@@ -883,6 +889,11 @@ func healState(poolDir string, state State) (State, error) {
 				wt.OwnerPID = 0
 				wt.OwnerStartedAt = 0
 				wt.Destroying = false
+			}
+			if wt.LastBranch != "" {
+				if exists, err := vcs.LocalBranchExistsForWorktree(wt.Path, wt.LastBranch); err == nil && !exists {
+					wt.LastBranch = ""
+				}
 			}
 			healed = append(healed, wt)
 		}
@@ -1013,4 +1024,15 @@ func nextName(state State) string {
 		}
 	}
 	return strconv.Itoa(max + 1)
+}
+
+// Snapshot readers hide a proven stale hint without persisting that observation.
+func visibleLastBranch(wt WorktreeEntry) string {
+	if wt.LastBranch == "" || vcs.WorktreeBackendName(wt.Path) != "git" {
+		return ""
+	}
+	if exists, err := vcs.LocalBranchExistsForWorktree(wt.Path, wt.LastBranch); err == nil && !exists {
+		return ""
+	}
+	return wt.LastBranch
 }

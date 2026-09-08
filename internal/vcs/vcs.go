@@ -589,3 +589,24 @@ func InspectGitWorktree(path string) GitWorktreeFacts {
 	}
 	return gitvcs.InspectWorktree(path)
 }
+
+func LocalBranchExistsForWorktree(path, branch string) (bool, error) {
+	if WorktreeBackendName(path) != "git" {
+		return false, fmt.Errorf("local branch reporting requires a Git worktree")
+	}
+	return gitvcs.LocalBranchExists(path, branch)
+}
+
+func InspectGitBase(path, branch, expectedHead string) (atBase, merged, known bool) {
+	if WorktreeBackendName(path) != "git" {
+		return
+	}
+	if branch == "" {
+		var err error
+		branch, err = DefaultBranchForWorktree(path)
+		if err != nil {
+			return
+		}
+	}
+	return gitvcs.InspectBase(path, branch, expectedHead)
+}
