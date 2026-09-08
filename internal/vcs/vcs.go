@@ -634,9 +634,9 @@ func WithGitBranchIdentity(repo, path, branch string, callback func() error) err
 	return gitvcs.WithBranchIdentity(repo, path, branch, callback)
 }
 
-func SwitchGitBranch(repo, path, branch, base string) error {
+func SwitchGitBranch(repo, path, branch string) error {
 	if WorktreeBackendName(path) != "git" {
 		return fmt.Errorf("target %s is not a Git slot", path)
 	}
-	return gitvcs.SwitchBranch(repo, path, branch, base)
+	return gitvcs.SwitchBranch(repo, path, branch)
 }
