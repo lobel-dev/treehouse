@@ -166,7 +166,7 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `treehouse get`            | Acquire a worktree from the pool                     |
 | `treehouse get --lease`    | Durably lease a worktree without a subshell; print its path |
 | `treehouse lease <name>`   | Durably lease an existing pool worktree in place, without touching its files or git state |
-| `treehouse enter <name>`   | Open a subshell in an existing worktree by name (the number from `status`), even if it is in use; pool state is left untouched |
+| `treehouse enter <name\|pool/name>` | Open a subshell in an existing worktree by name (the number from `status`), even if it is in use; pool state is left untouched. A `pool/name` selector works from any directory |
 | `treehouse status`         | Show pool status (highlights leased and current worktrees) |
 | `treehouse return [path]`  | Release any lease and return a worktree only after verifying foreign processes stopped |
 | `treehouse prune`          | Dry-run removal of stale idle worktrees in the current repo pool |
@@ -407,7 +407,7 @@ max_trees = 16
 ```
 
 The repo-level config takes precedence for repo-safe settings.
-`treehouse prune --all` can run without a repository, so it uses only the user-level config and does not read per-repo `treehouse.toml` files while sweeping.
+Global commands (`treehouse prune --all`, `treehouse status --all`, and a qualified `treehouse enter <pool>/<name>`) can run without a repository, so they use only the user-level config and never read per-repo `treehouse.toml` files.
 If no config is found, the default pool size is 16.
 
 ### Base branch
@@ -497,7 +497,7 @@ This is **opt-in**; the default global store is unchanged. In-project mode:
 
 - Places the pool at `<repo>/.treehouse/`, so worktrees sit next to the code and are **removed with the project** (`rm -rf <repo>` leaves no global orphan).
 - Git-ignores the pool directory automatically, so it stays out of `git add`.
-- Is not reached by `treehouse prune --all`, which only sweeps the global root; in-project pools are removed with the project instead.
+- Is not reached by global commands such as `treehouse prune --all` and `treehouse status --all`, which only cover the global root; in-project pools are removed with the project instead.
 
 ### Hooks
 
