@@ -754,46 +754,52 @@ func List(poolDir string) ([]WorktreeStatus, error) {
 			return err
 		}
 
-		cwd, _ := os.Getwd()
-
-		for _, wt := range state.Worktrees {
-			if wt.Destroying {
-				continue
-			}
-			ws := WorktreeStatus{
-				Name:   wt.Name,
-				Path:   wt.Path,
-				Status: StatusAvailable,
-				Flavor: vcs.WorktreeBackendName(wt.Path),
-			}
-
-			procs, _ := process.FindProcessesInWorktree(wt.Path)
-			ws.Processes = procs
-
-			if wt.Leased {
-				ws.Status = StatusLeased
-				ws.LeaseID = wt.LeaseID
-				ws.LeaseHolder = wt.LeaseHolder
-				ws.LeasedAt = wt.LeasedAt
-			} else if ownerAlive(wt) {
-				ws.Status = StatusInUse
-			} else if len(procs) > 0 {
-				ws.Status = StatusInUse
-				if cwdInWorktree(cwd, wt.Path) {
-					ws.Status = StatusHere
-				}
-			} else if ws.Flavor == "" {
-				ws.Status = StatusDamaged
-			} else if dirty, _ := vcs.IsDirty(wt.Path); dirty {
-				ws.Status = StatusDirty
-			}
-
-			result = append(result, ws)
-		}
+		result = describeWorktrees(state)
 		return nil
 	})
 
 	return result, err
+}
+
+func describeWorktrees(state State) []WorktreeStatus {
+	var result []WorktreeStatus
+	cwd, _ := os.Getwd()
+
+	for _, wt := range state.Worktrees {
+		if wt.Destroying {
+			continue
+		}
+		ws := WorktreeStatus{
+			Name:   wt.Name,
+			Path:   wt.Path,
+			Status: StatusAvailable,
+			Flavor: vcs.WorktreeBackendName(wt.Path),
+		}
+
+		procs, _ := process.FindProcessesInWorktree(wt.Path)
+		ws.Processes = procs
+
+		if wt.Leased {
+			ws.Status = StatusLeased
+			ws.LeaseID = wt.LeaseID
+			ws.LeaseHolder = wt.LeaseHolder
+			ws.LeasedAt = wt.LeasedAt
+		} else if ownerAlive(wt) {
+			ws.Status = StatusInUse
+		} else if len(procs) > 0 {
+			ws.Status = StatusInUse
+			if cwdInWorktree(cwd, wt.Path) {
+				ws.Status = StatusHere
+			}
+		} else if ws.Flavor == "" {
+			ws.Status = StatusDamaged
+		} else if dirty, _ := vcs.IsDirty(wt.Path); dirty {
+			ws.Status = StatusDirty
+		}
+
+		result = append(result, ws)
+	}
+	return result
 }
 
 func FindByPath(poolDir, path string) (*WorktreeEntry, error) {

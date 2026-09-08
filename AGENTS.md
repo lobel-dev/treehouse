@@ -51,6 +51,7 @@ make test
 - Prune never treats an unreachable origin as a deletable orphan; those worktrees stay skipped because the repository may still be valid. Each backend owns its unreachable-origin error vocabulary (`gitvcs`/`jjvcs` `IsOriginAccessError`; jj shells out to git so its patterns wrap git's), and the `vcs` facade classifies by error content, not by the configured backend
 - Global prune enumerates managed pool directories under the user-level treehouse root and derives each worktree's owning repository from VCS metadata instead of relying on the current directory
 - Global prune loads user-level config and hooks only because it can run without a repository context
+- Global navigation (`status --all`/`--global`, `enter <pool>/<name>`) uses user config and the selected absolute pool root, never cwd repo config. Selectors use actual pool directory names to distinguish same-basename projects. `pool.ListSnapshot` reads without healing or writing state; existing local `List` still heals and writes. Discovery covers only immediate managed pool directories under that root, not other custom or repo-relative roots.
 - State file tracks pool membership, temporary owner/destroy reservations, and explicit durable leases.
   It still does not infer long-term usage from processes.
 - `WriteState` is atomic: it writes to a temp file in the pool directory, fsyncs it, commits it with the platform replacement primitive, and syncs the parent directory where supported.

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,11 +16,15 @@ import (
 )
 
 var enterCmd = &cobra.Command{
-	Use:   "enter <name>",
+	Use:   "enter <name|pool/name>",
 	Short: "Open a subshell in an existing worktree by name, even if in use",
 	Long: `Open a subshell in an existing pool worktree identified by its name
 (the number shown by 'treehouse status'), including worktrees that are
 already in use.
+
+From any directory, use the pool/name selector shown by
+'treehouse status --all'. Qualified selectors use the user-level root
+(or an absolute --root), independently of the current repository.
 
 Unlike 'get', enter does not acquire, reset, or return the worktree: it
 drops you into the directory and leaves all pool state untouched when you
@@ -42,22 +47,47 @@ func init() {
 func enterRunE(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	repoRoot, err := vcs.FindRepoRoot()
-	if err != nil {
-		return fmt.Errorf("not in a git or jj repository: %w", err)
-	}
+	var worktrees []pool.WorktreeStatus
+	var err error
+	if strings.ContainsAny(name, "/\\:") {
+		var poolName string
+		poolName, name, err = parseGlobalSelector(name)
+		if err != nil {
+			return err
+		}
+		var root string
+		root, err = globalNavigationRoot()
+		if err != nil {
+			return err
+		}
+		poolDir := filepath.Join(root, poolName)
+		info, statErr := os.Lstat(poolDir)
+		if statErr != nil || !info.IsDir() || !pool.IsPoolDir(poolDir) {
+			return fmt.Errorf("unknown pool %q under %s", poolName, root)
+		}
+		worktrees, err = pool.ListSnapshot(poolDir)
+	} else {
+		repoRoot, err := vcs.FindRepoRoot()
+		if err != nil {
+			return fmt.Errorf("not in a git or jj repository: %w", err)
+		}
 
-	cfg, err := config.Load(repoRoot)
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
+		cfg, err := config.Load(repoRoot)
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
 
-	poolDir, err := config.ResolvePoolDir(repoRoot, config.ResolveRoot(rootFlag, cfg))
-	if err != nil {
-		return fmt.Errorf("failed to resolve pool directory: %w", err)
-	}
+		poolDir, err := config.ResolvePoolDir(repoRoot, config.ResolveRoot(rootFlag, cfg))
+		if err != nil {
+			return fmt.Errorf("failed to resolve pool directory: %w", err)
+		}
 
-	worktrees, err := pool.List(poolDir)
+		worktrees, err = pool.List(poolDir)
+		if err != nil {
+			return err
+		}
+
+	}
 	if err != nil {
 		return err
 	}

@@ -176,6 +176,22 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `treehouse init`           | Create a default `treehouse.toml` config file        |
 | `treehouse update`         | Update treehouse to the latest version               |
 
+### Navigation across projects
+
+Run `treehouse status --all` (or `--global`) from any directory to list worktrees across projects. Each row starts with a copyable `pool/name` selector; the pool directory name includes the repository identity, so projects with the same basename remain distinct.
+
+```sh
+treehouse status --all
+treehouse enter same-0a8cbd/1
+cd "$(treehouse enter --print-path same-0a8cbd/1)"
+```
+
+Use the selector printed by your listing. Qualified `enter` opens that existing slot without acquiring, resetting, returning, or writing pool state. Exiting leaves its files and lease intact. Local `treehouse status` and `treehouse enter 1` still select the current repository.
+
+Global navigation searches only managed pool directories immediately under the user-level root, using user config or an absolute `--root` override. It does not discover repo-relative roots or other custom roots automatically; pass their absolute root explicitly. An empty root lists no worktrees and is not created. Relative roots are rejected for global navigation.
+
+`treehouse status --all --json` stays a top-level array with the usual status fields plus `pool` (the pool directory name) and `selector` on each row. Local status JSON is unchanged. Global status reads a snapshot without healing or writing pool state.
+
 ### Flags
 
 | Command   | Flag      | Description                       |
@@ -187,6 +203,7 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `lease`   | `--lease-holder` | Optional label recorded as the lease holder (defaults to `$TREEHOUSE_LEASE_HOLDER`) |
 | `lease`   | `--json` | Print `path`, `lease_id`, `lease_holder`, `leased_at`, and `base_branch` as JSON (`base_branch` is best-effort: empty when the slot records no explicit base and its own worktree cannot resolve a default) |
 | `enter`   | `--print-path` | Print only the worktree's absolute path to stdout instead of opening a subshell (for `cd "$(treehouse enter --print-path 1)"`) |
+| `status`  | `--all`, `--global` | List worktrees across managed pools from any directory |
 | `status`  | `--json` | Print worktree status and lease metadata as JSON |
 | `return`  | `--force` | Clean, reset, and return without prompting |
 | `return`  | `--if-lease-id` | Return only if the current lease has the expected per-acquisition identity |
