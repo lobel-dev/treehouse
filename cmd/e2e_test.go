@@ -496,8 +496,8 @@ func TestGetAndStatus(t *testing.T) {
 	if !strings.Contains(getErr, "Entered worktree at") {
 		t.Errorf("expected 'Entered worktree at' in stderr: %s", getErr)
 	}
-	if !strings.Contains(getErr, "Worktree returned to pool") {
-		t.Errorf("expected 'Worktree returned to pool' in stderr: %s", getErr)
+	if !strings.Contains(getErr, "parked, reset to") {
+		t.Errorf("expected 'parked, reset to' in stderr: %s", getErr)
 	}
 
 	wtPath := extractWorktreePath(getErr, homeDir)
@@ -1164,7 +1164,7 @@ func TestReturnLegacyPathOnlyIgnoresStaleCallerHolder(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("return failed (code %d): %s", code, returnErr)
 	}
-	if !strings.Contains(returnErr, "Worktree returned to pool") {
+	if !strings.Contains(returnErr, "parked, reset to") {
 		t.Fatalf("expected return confirmation, got: %s", returnErr)
 	}
 
@@ -1227,7 +1227,7 @@ func TestReturnConditionalLeaseIdentityLifecycle(t *testing.T) {
 
 	_, stderr, code = runTreehouse(t, repoDir, homeDir, nil, "return", "--force",
 		"--if-lease-id", lease.LeaseID, "--if-lease-holder", lease.LeaseHolder, lease.Path)
-	if code != 0 || !strings.Contains(stderr, "Worktree returned to pool") {
+	if code != 0 || !strings.Contains(stderr, "parked, reset to") {
 		t.Fatalf("correct conditional return failed, code=%d stderr=%q", code, stderr)
 	}
 	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
@@ -1400,7 +1400,7 @@ func TestReturnExplicitPathFromOutsideRepoReleasesLease(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("return from outside repo failed (code %d): %s", code, returnErr)
 	}
-	if !strings.Contains(returnErr, "Worktree returned to pool") {
+	if !strings.Contains(returnErr, "parked, reset to") {
 		t.Fatalf("expected return confirmation, got: %s", returnErr)
 	}
 
@@ -1442,7 +1442,7 @@ func TestReturnExplicitPathFromLinkedWorktreePool(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("return from outside repo failed (code %d): %s", code, returnErr)
 	}
-	if !strings.Contains(returnErr, "Worktree returned to pool") {
+	if !strings.Contains(returnErr, "parked, reset to") {
 		t.Fatalf("expected return confirmation, got: %s", returnErr)
 	}
 
@@ -1559,7 +1559,7 @@ func TestReturnFromInsideWorktreeDoesNotTerminateCaller(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("return from inside worktree failed (code %d): %s", code, returnErr)
 	}
-	if !strings.Contains(returnErr, "Worktree returned to pool") {
+	if !strings.Contains(returnErr, "parked, reset to") {
 		t.Fatalf("expected return confirmation, got: %s", returnErr)
 	}
 	if strings.Contains(returnErr, "Terminated lingering processes") && strings.Contains(returnErr, "treehouse") {

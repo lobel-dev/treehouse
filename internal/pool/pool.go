@@ -625,6 +625,13 @@ func ValidateReleasePreconditions(poolDir, worktreePath string, preconditions Re
 	})
 }
 
+// ReleaseReport is emitted only after state persistence succeeds.
+type ReleaseReport struct {
+	vcs.ReturnReport
+	Name    string
+	Damaged bool
+}
+
 // ReleaseConditional verifies any lease preconditions, runs beforeReset, resets
 // the worktree, and clears its reservation while holding one state lock. The
 // callback is invoked only after all preconditions match and runs under that
@@ -641,6 +648,19 @@ func ValidateReleasePreconditions(poolDir, worktreePath string, preconditions Re
 // HEAD is merged into the base it resets to, so a slot parked off-base is never
 // recycled and every acquire grows the pool until max_trees.
 func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions ReleasePreconditions, beforeReset func() error) error {
+	_, err := ReleaseConditionalReport(poolDir, worktreePath, baseBranch, preconditions, beforeReset)
+	return err
+}
+
+// ReleaseConditionalReport performs ReleaseConditional with the same base,
+// precondition, callback, and state-lock contract, returning a report only after
+// pool state is saved. Damaged slots report reservation clearing without a reset.
+// On any error the report is zero, but effects are not rolled back: beforeReset
+// may have run, files may be partly reset, or parking may have completed before
+// state persistence failed. Callers must not interpret an error as no mutation
+// or print a successful release report on that path.
+func ReleaseConditionalReport(poolDir, worktreePath, baseBranch string, preconditions ReleasePreconditions, beforeReset func() error) (ReleaseReport, error) {
+	var report ReleaseReport
 	markerless := vcs.WorktreeBackendName(worktreePath) == ""
 	// Resolved before the state lock so a failure surfaces before beforeReset
 	// kills the worktree's processes. It is only fatal when the slot has no
@@ -649,7 +669,7 @@ func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions 
 	if !markerless {
 		defaultBranch, defaultErr = vcs.DefaultBranchForWorktree(worktreePath)
 	}
-	return WithStateLock(poolDir, func() error {
+	err := WithStateLock(poolDir, func() error {
 		state, err := ReadState(poolDir)
 		if err != nil {
 			return err
@@ -659,6 +679,7 @@ func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions 
 		if err != nil {
 			return err
 		}
+		report.Name = wt.Name
 		// Clearing a safety quarantine without a trusted seed inventory could
 		// expose ignored files hidden by a mutable manifest.
 		if !wt.SeedInventoryKnown {
@@ -679,10 +700,12 @@ func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions 
 			}
 		}
 		if !markerless {
-			parked, err := vcs.ReturnWorktree(worktreePath, branch, fallback, wt.SeededPaths, beforeReset)
+			observed, err := vcs.ReturnWorktreeReport(worktreePath, branch, fallback, wt.SeededPaths, beforeReset)
 			if err != nil {
 				return err
 			}
+			report.ReturnReport = observed
+			parked := observed.TargetBranch
 			if parked != branch {
 				fmt.Fprintf(os.Stderr, "🌳 Warning: cannot park the worktree on %q; using %s instead.\n", branch, parked)
 				requested = ""
@@ -694,12 +717,23 @@ func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions 
 			}
 		}
 
+		report.Damaged = markerless
 		wt.OwnerPID = 0
 		wt.OwnerStartedAt = 0
 		clearLease(wt)
 		setSeedInventory(wt, nil, true)
-		return WriteState(poolDir, state)
+		if err := WriteState(poolDir, state); err != nil {
+			if report.Parked {
+				return fmt.Errorf("worktree was parked, but pool state could not be saved: %w", err)
+			}
+			return err
+		}
+		return nil
 	})
+	if err != nil {
+		return ReleaseReport{}, err
+	}
+	return report, nil
 }
 
 func releasableWorktree(state *State, worktreePath string, preconditions ReleasePreconditions) (*WorktreeEntry, error) {

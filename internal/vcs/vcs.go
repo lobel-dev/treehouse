@@ -563,3 +563,33 @@ func returnWorktreeWithBackend(b Backend, worktreePath, branch, fallback string,
 	}
 	return branch, err
 }
+
+// ReturnReport contains Git facts only when Git's return operation observed them.
+type ReturnReport = gitvcs.ReturnReport
+
+// UnpreservedHeadError identifies a Git return refusal with no available durable
+// branch, tag, or remote ref preserving Head; a reflog alone is insufficient.
+// Callers can use errors.As to distinguish this from an inspection or lock error
+// and suggest creating a preserving ref before retrying. It precedes beforeReset
+// and any reset of the worktree.
+type UnpreservedHeadError = gitvcs.UnpreservedHeadError
+
+// ReturnWorktreeReport resets a marked worktree through its own backend with
+// ReturnWorktree's preservation, fallback, seeded cleanup, and callback contract.
+// It does not update pool reservations. Git observations are captured under its
+// return locks; other backends report only Parked and TargetBranch. Markerless
+// paths are refused without invoking beforeReset.
+// A non-nil error may accompany partial observations and does not imply that
+// beforeReset or file updates were undone. Parked is true only after a completed
+// reset; optional observations never authorize cleanup or prove pool release.
+func ReturnWorktreeReport(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (ReturnReport, error) {
+	b, err := destructiveBackendForWorktree(worktreePath)
+	if err != nil {
+		return ReturnReport{}, err
+	}
+	if b.Name() == "git" {
+		return gitvcs.ReturnWorktreeReport(worktreePath, branch, fallback, seededPaths, beforeReset)
+	}
+	parked, err := returnWorktreeWithBackend(b, worktreePath, branch, fallback, seededPaths, beforeReset)
+	return ReturnReport{Parked: err == nil, TargetBranch: parked}, err
+}

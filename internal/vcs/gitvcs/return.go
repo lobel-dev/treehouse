@@ -13,10 +13,48 @@ import (
 // ReturnWorktree holds HEAD and a durable containing ref stable before stopping
 // writers or touching files. A reflog or another worktree's HEAD is not enough.
 func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (string, error) {
+	return returnWorktree(worktreePath, branch, fallback, seededPaths, beforeReset, nil)
+}
+
+// ReturnReport describes a return attempt; Parked indicates a completed reset.
+// Identities are captured under the return locks. Subject and change counts are
+// best-effort observations (counts are known only when ChangesKnown is true), not
+// cleanup authorization or a deletion audit. Text such as Subject is unescaped
+// repository data; callers must escape it for their output medium.
+type ReturnReport struct {
+	Parked         bool
+	TargetBranch   string
+	TargetCommit   string
+	PriorHead      string
+	AttachedBranch string
+	PreservingRef  string
+	Subject        string
+	ChangesKnown   bool
+	TrackedPaths   int
+	UntrackedPaths int
+}
+
+// ReturnWorktreeReport performs ReturnWorktree and captures protected identities
+// inside the same HEAD and containing-ref locks. Target resolution may use
+// fallback only before preparation; beforeReset runs under those locks before
+// file updates. Errors can carry partial observations with Parked false, and
+// callback effects or partial file updates are not rolled back. No pool state is
+// persisted by this function.
+func ReturnWorktreeReport(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (ReturnReport, error) {
+	var report ReturnReport
+	_, err := returnWorktree(worktreePath, branch, fallback, seededPaths, beforeReset, &report)
+	return report, err
+}
+
+func returnWorktree(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error, report *ReturnReport) (string, error) {
 	run, err := pinnedReturnGit(worktreePath)
 	if err != nil {
 		return "", err
 	}
+	return returnWorktreeUsing(run, worktreePath, branch, fallback, seededPaths, beforeReset, report)
+}
+
+func returnWorktreeUsing(run gitRunner, worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error, report *ReturnReport) (string, error) {
 	storage, err := run(worktreePath, "config", "--default", "files", "--get", "extensions.refStorage")
 	if err != nil {
 		return "", err
@@ -36,8 +74,9 @@ func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string,
 	if err != nil {
 		return "", err
 	}
+	prepared := false
 	err = resetWorktreeToRefUsing(run, worktreePath, target, head, false, seededPaths, true, func(head string) (func(), error) {
-		unlock, err := lockContainingRef(run, worktreePath, head)
+		unlock, ref, attached, err := lockContainingRef(run, worktreePath, head)
 		if err != nil {
 			return nil, err
 		}
@@ -52,20 +91,35 @@ func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string,
 			unlock()
 			return nil, fmt.Errorf("worktree HEAD changed since safety check")
 		}
+		if report != nil {
+			report.TargetBranch, report.TargetCommit = branch, target
+			report.PriorHead, report.PreservingRef = head, ref
+			report.AttachedBranch = strings.TrimPrefix(attached, "refs/heads/")
+			report.Subject, _ = run(worktreePath, "show", "-s", "--format=%s", head)
+			observeReturnChanges(run, worktreePath, report)
+		}
+		prepared = true
 		return unlock, nil
 	})
+	if report != nil {
+		report.Parked = err == nil
+	}
+	if err != nil && prepared {
+		return branch, fmt.Errorf("return reset did not complete; worktree files may be partially updated: %w", err)
+	}
 	return branch, err
 }
 
-func lockContainingRef(run gitRunner, worktreePath, head string) (func(), error) {
+func lockContainingRef(run gitRunner, worktreePath, head string) (func(), string, string, error) {
 	refs, err := run(worktreePath, "for-each-ref", "--contains="+head, "--format=%(refname) %(symref)", "refs/heads/", "refs/tags/", "refs/remotes/")
 	if err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
 	// An attached HEAD also changes when another worktree updates its branch.
 	// Hold that exact branch, not merely some other containing ref.
 	attached, _ := run(worktreePath, "symbolic-ref", "-q", "HEAD")
 	var contention error
+	verificationFailed := false
 	for _, line := range strings.Split(refs, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 1 || (attached != "" && fields[0] != attached) {
@@ -78,23 +132,27 @@ func lockContainingRef(run gitRunner, worktreePath, head string) (func(), error)
 				contention = err
 				continue
 			}
-			return nil, err
+			return nil, "", "", err
 		}
 		if !refStillPreservesHead(run, worktreePath, ref, head) {
+			verificationFailed = true
 			unlock()
 			continue
 		}
 		current, err := run(worktreePath, "rev-parse", "--verify", "HEAD^{commit}")
 		if err != nil || current != head {
 			unlock()
-			return nil, fmt.Errorf("worktree HEAD changed since safety check")
+			return nil, "", "", fmt.Errorf("worktree HEAD changed since safety check")
 		}
-		return unlock, nil
+		return unlock, ref, attached, nil
 	}
 	if contention != nil {
-		return nil, contention
+		return nil, "", "", contention
 	}
-	return nil, fmt.Errorf("refusing to return worktree: HEAD %s is not preserved by an available branch, tag, or remote ref; create a branch at HEAD before returning (reflogs are not sufficient)", head)
+	if verificationFailed {
+		return nil, "", "", fmt.Errorf("refusing to return worktree: could not revalidate a durable ref preserving HEAD %s", head)
+	}
+	return nil, "", "", &UnpreservedHeadError{Head: head}
 }
 
 func lockReturnRef(run gitRunner, worktreePath, ref string) (func(), error) {
@@ -207,6 +265,9 @@ func pinnedReturnGit(worktreePath string) (gitRunner, error) {
 		cmd := exec.Command("git", commandArgs...)
 		cmd.Dir = worktreePath
 		cmd.Env = env
+		if len(args) > 0 && args[0] == "status" {
+			cmd.Env = append(append([]string(nil), env...), "GIT_OPTIONAL_LOCKS=0")
+		}
 		out, err := cmd.Output()
 		if err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
@@ -214,6 +275,45 @@ func pinnedReturnGit(worktreePath string) (gitRunner, error) {
 			}
 			return "", err
 		}
+		if len(args) > 0 && args[0] == "status" {
+			return string(out), nil
+		}
 		return strings.TrimSpace(string(out)), nil
 	}, nil
+}
+
+// Porcelain -z makes unusual filenames and renames unambiguous. Ignored files
+// are deliberately excluded; these are observations, not a deletion audit.
+func observeReturnChanges(run gitRunner, path string, report *ReturnReport) {
+	out, err := run(path, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+	if err != nil {
+		return
+	}
+	records := strings.Split(out, "\x00")
+	tracked, untracked := 0, 0
+	for i := 0; i < len(records); i++ {
+		record := records[i]
+		if record == "" {
+			continue
+		}
+		if len(record) < 3 {
+			return
+		}
+		if strings.HasPrefix(record, "?? ") {
+			untracked++
+			continue
+		}
+		tracked++
+		if record[0] == 'R' || record[0] == 'C' || record[1] == 'R' || record[1] == 'C' {
+			i++
+		}
+	}
+	report.ChangesKnown, report.TrackedPaths, report.UntrackedPaths = true, tracked, untracked
+}
+
+// UnpreservedHeadError distinguishes a proven absence from an inspection failure.
+type UnpreservedHeadError struct{ Head string }
+
+func (e *UnpreservedHeadError) Error() string {
+	return fmt.Sprintf("refusing to return worktree: HEAD %s is not preserved by an available branch, tag, or remote ref; create a branch at HEAD before returning (reflogs are not sufficient)", e.Head)
 }
