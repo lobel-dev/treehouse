@@ -1,5 +1,58 @@
 # Changelog
 
+## [2.4.0](https://github.com/lobel-dev/treehouse/compare/v2.3.0...v2.4.0) (2026-09-09)
+
+
+### Features
+
+* add explicit branch and slot addressing ([ec82167](https://github.com/lobel-dev/treehouse/commit/ec8216727ef5e6095d1994b17e5e69a897e71ebe))
+* add explicit branch and slot addressing ([621b5ba](https://github.com/lobel-dev/treehouse/commit/621b5ba8e023e8add66905bef5efdb273361c0ca))
+* add interactive home, tree picker, and confirmed cleanup ([0fcc86d](https://github.com/lobel-dev/treehouse/commit/0fcc86d784288e753bb2090652ce35e8fa2d3b92))
+* add ls table with advisory branch history ([54b35db](https://github.com/lobel-dev/treehouse/commit/54b35db85b2e22fd749f1a70a790ed209357596f))
+* add ls table with advisory branch history ([d79b286](https://github.com/lobel-dev/treehouse/commit/d79b286737381f18c88c3d77f5fbe6ca40bf5846))
+* add Nix package manager install support ([#113](https://github.com/lobel-dev/treehouse/issues/113)) ([4307a30](https://github.com/lobel-dev/treehouse/commit/4307a30f6d18457200dbd15954a56d75749454b8))
+* add per-acquisition file seeding manifests ([#131](https://github.com/lobel-dev/treehouse/issues/131)) ([67c9f2f](https://github.com/lobel-dev/treehouse/commit/67c9f2fd5e662321b3481255ffa633540d5d793e))
+* **cmd:** navigate pool worktrees across projects ([790e5bf](https://github.com/lobel-dev/treehouse/commit/790e5bf0f1e0282eae3ec96d34063e09b4aa51a8))
+* explain lifecycle refusals with evidence and remedies ([c5c67ba](https://github.com/lobel-dev/treehouse/commit/c5c67ba12ea88ff9541899c160d7d6de71f47b21))
+* explain lifecycle refusals with preservation facts and remedies ([9c51ac7](https://github.com/lobel-dev/treehouse/commit/9c51ac7587f0f9489470d2c489d5d1e598108c23))
+* make Treehouse interactive from the first command ([6edffce](https://github.com/lobel-dev/treehouse/commit/6edffce8d0405a68046a142000bcf4631542321a))
+* navigate worktrees across projects ([cd91b0b](https://github.com/lobel-dev/treehouse/commit/cd91b0b0325f059c2b0ec9b39b1f1ace089e4b2c))
+* **pool:** add lease command to durably lease an existing worktree ([#128](https://github.com/lobel-dev/treehouse/issues/128)) ([b227e59](https://github.com/lobel-dev/treehouse/commit/b227e59cf73fd15d69f00b580da0f5bee6b38fce))
+* **pool:** seed ignored files from .worktreeinclude ([#129](https://github.com/lobel-dev/treehouse/issues/129)) ([0e87c62](https://github.com/lobel-dev/treehouse/commit/0e87c62b0494fd08bc5df230797cfb44a10dd814))
+* **pool:** support configurable base branch for get ([#119](https://github.com/lobel-dev/treehouse/issues/119)) ([c98e9de](https://github.com/lobel-dev/treehouse/commit/c98e9de0a8ad85d9551ccce85ecd96c8b9a8dff5))
+* report protected work and parking outcome on return ([978df1e](https://github.com/lobel-dev/treehouse/commit/978df1e79b8aba224db8f0f6ff08f59da4fb5f0a))
+* report protected work and parking outcome on return ([ba43173](https://github.com/lobel-dev/treehouse/commit/ba43173a74b663777494d52466bfe17c5a50f67a))
+* resume literal Git branches with guarded work acquisition ([d444e61](https://github.com/lobel-dev/treehouse/commit/d444e618470753a1321e7335521ce4298f46fedc))
+* resume literal Git branches with guarded work acquisition ([7a0f7bc](https://github.com/lobel-dev/treehouse/commit/7a0f7bcd608bdae64e6e54ccc29bcb5f3e93493b))
+
+
+### Bug Fixes
+
+* **cmd:** paste-safe dirty non-TTY return --force hints ([#122](https://github.com/lobel-dev/treehouse/issues/122)) ([59762c9](https://github.com/lobel-dev/treehouse/commit/59762c9dd545cca29517e6b7333ec5a23e67ee85))
+* escape return report subjects and disambiguate resume hints ([43b317d](https://github.com/lobel-dev/treehouse/commit/43b317d4b3c42eeb69a5beee00c7c016567076b7))
+* identify branches in interactive cleanup previews ([28a2247](https://github.com/lobel-dev/treehouse/commit/28a2247ab84f9a6d3766969cf7b09562e8836f2f))
+* ignore missing registrations when entering by branch ([4f9438f](https://github.com/lobel-dev/treehouse/commit/4f9438fc01246580e3119e615d3a3fe94becad8a))
+* keep fork installs and updates on fork releases ([0d6c668](https://github.com/lobel-dev/treehouse/commit/0d6c6680d03d5d0340bc1af78e985e61f6ea8553))
+* keep work creation on the acquired base and scope resume hints ([8408f81](https://github.com/lobel-dev/treehouse/commit/8408f81a65a77ad4a098af1d32d135fad7b4661b))
+* leave the interactive launcher when a tree shell exits ([84e67ea](https://github.com/lobel-dev/treehouse/commit/84e67ea08b9c8d0939ddbece05bcbb2289824702))
+* **ls:** reject unsupported positional arguments ([8c40dfa](https://github.com/lobel-dev/treehouse/commit/8c40dfac8a191ef8037bdafbbc5f1e644b310634))
+* normalize Git registration paths on Windows ([e8ed5a2](https://github.com/lobel-dev/treehouse/commit/e8ed5a2b9c409f2a83c28849f19017db028a452c))
+* pin Git returns and address review diagnostics ([682f187](https://github.com/lobel-dev/treehouse/commit/682f187f2481422d468340445d9ae8857d1304d2))
+* **pool:** avoid duplicate recovered slots through root aliases ([96c4f5c](https://github.com/lobel-dev/treehouse/commit/96c4f5c9da4bbbe3ed4a6896920174bf06fabba6))
+* **pool:** avoid duplicate recovered slots through root aliases ([96c4f5c](https://github.com/lobel-dev/treehouse/commit/96c4f5c9da4bbbe3ed4a6896920174bf06fabba6))
+* **pool:** preserve state when worktree identity is unreadable ([9557933](https://github.com/lobel-dev/treehouse/commit/9557933e2f8ed267f225e1208cd7c00087933b8f))
+* preserve committed work and report aborted returns ([62a1be0](https://github.com/lobel-dev/treehouse/commit/62a1be0c09c8044a2e577554684c36d7f3c51dcf))
+* preserve work failures and bound Git fetch lifecycle ([e2f1e18](https://github.com/lobel-dev/treehouse/commit/e2f1e18d322e2a5d3f298be8710120280253f7c0))
+* refuse Git return after slot marker disappears ([ed537ad](https://github.com/lobel-dev/treehouse/commit/ed537ad3649a4896b56c8f89fb32982ae862552b))
+* report successful destroy merge comparisons ([fc5392e](https://github.com/lobel-dev/treehouse/commit/fc5392e7236df6b4aa945fe9e4d577e7c46e2283))
+* require direct branch identity during reclamation ([20af858](https://github.com/lobel-dev/treehouse/commit/20af858a578ed968c032369d987c6b06d549058f))
+* **shell:** start supported user shells as interactive login sessions ([#120](https://github.com/lobel-dev/treehouse/issues/120)) ([db06078](https://github.com/lobel-dev/treehouse/commit/db06078c6f5569e539b8cdb7703f38fdefe06382))
+* **updater:** keep fork installs and updates on lobel-dev/treehouse releases ([f9dd071](https://github.com/lobel-dev/treehouse/commit/f9dd07161fa959f0f1bcd48fc66bfd69492f7d0d))
+* **updater:** replace a running Windows exe without a fixed .old backup ([#121](https://github.com/lobel-dev/treehouse/issues/121)) ([bdbd0f8](https://github.com/lobel-dev/treehouse/commit/bdbd0f89164ba87cda5d48b53dfb3e04836dc6f7))
+* use configured root parent in writable-shell remedies ([baccbc4](https://github.com/lobel-dev/treehouse/commit/baccbc4ae71ba8b90413e3892ddeda93535d6a15))
+* **vcs:** refuse Git returns that would drop commits and exit nonzero on abort ([b710f59](https://github.com/lobel-dev/treehouse/commit/b710f5983a7e5ca92fdfb83c3945afbf4466e301))
+* verify stored ancestry before returning worktrees ([3a0de8b](https://github.com/lobel-dev/treehouse/commit/3a0de8bf95926c75ce6508b897e87a0de50970fe))
+
 ## [2.3.0](https://github.com/kunchenguid/treehouse/compare/v2.2.1...v2.3.0) (2026-08-21)
 
 
