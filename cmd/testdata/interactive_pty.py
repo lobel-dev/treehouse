@@ -92,7 +92,9 @@ try:
     elif mode == "empty":
         expect("No available branches")
         send("t")
-        expect("No trees yet")
+        # Inline redraws keep leftover "No " from the home empty state, so the
+        # byte stream never contains the contiguous phrase "No trees yet".
+        expect("Start work from home")
         capture("empty")
         send("q")
     elif mode == "resume":
