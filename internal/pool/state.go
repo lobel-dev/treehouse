@@ -44,6 +44,8 @@ type WorktreeEntry struct {
 	// this field, and recording an inferred default here would widen what they
 	// delete for pools that never opted in.
 	BaseBranch string `json:"base_branch,omitempty"`
+	// LastBranch is advisory human history, never a target or safety predicate.
+	LastBranch string `json:"last_branch,omitempty"`
 	// SeededPaths is the trusted inventory of ignored files copied for this
 	// acquisition. It must live outside the mutable worktree so reset cannot be
 	// bypassed by changing or committing .worktreeinclude there.
