@@ -417,8 +417,10 @@ func acquire(repoRoot, poolDir string, poolSize int, postCreate []string, opts a
 		// recreate ignored files after a worktree was removed. Reserve a new
 		// slot exclusively so unmanaged directories, files, and symlinks are
 		// never reused or overwritten.
+		var slotPath string
 		for {
-			err := os.Mkdir(filepath.Join(poolDir, name), 0755)
+			slotPath = filepath.Join(poolDir, name)
+			err := os.Mkdir(slotPath, 0755)
 			if err == nil {
 				break
 			}
@@ -429,7 +431,7 @@ func acquire(repoRoot, poolDir string, poolSize int, postCreate []string, opts a
 			name = strconv.Itoa(n + 1)
 		}
 		repoName := filepath.Base(repoRoot)
-		wtPath := filepath.Join(poolDir, name, repoName)
+		wtPath := filepath.Join(slotPath, repoName)
 
 		// Clear any stale worktree bookkeeping left behind by a crashed or
 		// forcibly removed worktree. Without this, git rejects the add with
@@ -446,6 +448,9 @@ func acquire(repoRoot, poolDir string, poolSize int, postCreate []string, opts a
 		}
 
 		if err := vcs.AddWorktree(repoRoot, wtPath, branch); err != nil {
+			if cleanupErr := os.Remove(slotPath); cleanupErr != nil && !os.IsNotExist(cleanupErr) {
+				return fmt.Errorf("failed to create worktree: %w (also failed to release slot %s: %v)", err, name, cleanupErr)
+			}
 			return fmt.Errorf("failed to create worktree: %w", err)
 		}
 		seededPaths, err := seedWorktree(repoRoot, wtPath, opts.includeManifest)
