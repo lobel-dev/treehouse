@@ -369,6 +369,11 @@ There is no cross-pool or global destroy: `--all` without a pool path is an erro
 
 Destroy is a dry run by default.
 It prints a risk-revealing preview - one or more status labels (`[disposable]`, `[leased]`, `[in-use:<pid>]`, `[unmerged]`, `[dirty]`, `[unverified]`, or a comma-separated combination such as `[leased,dirty]`), the path, and the size of each target - and removes nothing.
+
+Prune and destroy refusals distinguish merge status from commit preservation. For a Git slot, human diagnostics name its observed attached branch or detached HEAD and a durable preserving ref when known; failed reads say preservation is unknown. Unpreserved detached work gets a path-qualified branch-creation remedy. Comparisons name the actual default ref and, when attempted, the recorded explicit base; an unavailable recorded base remains unknown and does not make the slot disposable. Pushing can preserve a commit remotely but does not by itself merge that commit into the checked base.
+
+The printed `enter` command opens another writable shell. Removal suggestions use a named-path `destroy` preview with every required risk flag, including overlapping lease and in-use risks. Add `--yes` only after reviewing that preview. Prune has no general risk-override flags, and destroying a slot never deletes its Git branch. jj diagnostics use existing lifecycle commands and omit Git preservation claims.
+
 Pass `--yes` to execute.
 It never prints a blind "all worktrees destroyed"; the summary always reports exactly what was destroyed and what was skipped.
 

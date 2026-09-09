@@ -593,3 +593,13 @@ func ReturnWorktreeReport(worktreePath, branch, fallback string, seededPaths []s
 	parked, err := returnWorktreeWithBackend(b, worktreePath, branch, fallback, seededPaths, beforeReset)
 	return ReturnReport{Parked: err == nil, TargetBranch: parked}, err
 }
+
+// GitWorktreeFacts are optional human reporting facts, absent for non-Git slots.
+type GitWorktreeFacts = gitvcs.WorktreeFacts
+
+func InspectGitWorktree(path string) GitWorktreeFacts {
+	if WorktreeBackendName(path) != "git" {
+		return GitWorktreeFacts{}
+	}
+	return gitvcs.InspectWorktree(path)
+}
