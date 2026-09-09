@@ -11,36 +11,12 @@ import (
 )
 
 func interactivePrune() error {
-	var run func(pool.PruneOptions) (pool.PruneResult, error)
-	var cfg config.Config
-	var err error
-	if pruneAll || pruneGlobal {
-		cfg, err = config.LoadGlobal()
-		if err != nil {
-			return err
-		}
-		root, err := config.ResolvePoolRoot("", config.ResolveRoot(rootFlag, cfg))
-		if err != nil {
-			return err
-		}
-		run = func(opts pool.PruneOptions) (pool.PruneResult, error) {
-			r, err := pool.PruneAllWithOptions(root, opts)
-			return r.Result, err
-		}
-	} else {
-		repo, err := vcs.FindMainRepoRoot()
-		if err != nil {
-			return err
-		}
-		cfg, err = config.Load(repo)
-		if err != nil {
-			return err
-		}
-		dir, err := config.ResolvePoolDir(repo, config.ResolveRoot(rootFlag, cfg))
-		if err != nil {
-			return err
-		}
-		run = func(opts pool.PruneOptions) (pool.PruneResult, error) { return pool.PruneWithOptions(repo, dir, opts) }
+	if ui.DashboardSupported() {
+		return runWorkspace(ui.CleanupPage)
+	}
+	run, cfg, err := interactivePruneRunner()
+	if err != nil {
+		return err
 	}
 	opts := pool.PruneOptions{DryRun: true, ReadOnlySnapshot: true, PruneOrphans: pruneOrphans, PreDestroy: cfg.Hooks.PreDestroy}
 	preview, err := run(opts)
@@ -107,4 +83,39 @@ func pruneBranchLabel(tree pool.PruneWorktree) string {
 		return "Branch unavailable"
 	}
 	return "No branch checked out; no branch history"
+}
+
+func interactivePruneRunner() (func(pool.PruneOptions) (pool.PruneResult, error), config.Config, error) {
+	var run func(pool.PruneOptions) (pool.PruneResult, error)
+	var cfg config.Config
+	var err error
+	if pruneAll || pruneGlobal {
+		cfg, err = config.LoadGlobal()
+		if err != nil {
+			return nil, cfg, err
+		}
+		root, err := config.ResolvePoolRoot("", config.ResolveRoot(rootFlag, cfg))
+		if err != nil {
+			return nil, cfg, err
+		}
+		run = func(opts pool.PruneOptions) (pool.PruneResult, error) {
+			r, err := pool.PruneAllWithOptions(root, opts)
+			return r.Result, err
+		}
+	} else {
+		repo, err := vcs.FindMainRepoRoot()
+		if err != nil {
+			return nil, cfg, err
+		}
+		cfg, err = config.Load(repo)
+		if err != nil {
+			return nil, cfg, err
+		}
+		dir, err := config.ResolvePoolDir(repo, config.ResolveRoot(rootFlag, cfg))
+		if err != nil {
+			return nil, cfg, err
+		}
+		run = func(opts pool.PruneOptions) (pool.PruneResult, error) { return pool.PruneWithOptions(repo, dir, opts) }
+	}
+	return run, cfg, nil
 }

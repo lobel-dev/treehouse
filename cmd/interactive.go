@@ -25,6 +25,9 @@ func init() {
 }
 
 func interactiveHome() error {
+	if ui.DashboardSupported() {
+		return runWorkspace(ui.HomePage)
+	}
 	repo, err := vcs.FindMainRepoRoot()
 	if err != nil {
 		return fmt.Errorf("open Treehouse from a project repository: %w", err)
@@ -147,6 +150,9 @@ func sameMenuPath(a, b string) bool {
 }
 
 func chooseTree() (bool, error) {
+	if ui.DashboardSupported() {
+		return true, runWorkspace(ui.TreesPage)
+	}
 	_, slots, err := currentPoolSnapshot()
 	if err != nil {
 		return false, err

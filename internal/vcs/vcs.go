@@ -629,8 +629,8 @@ func InspectGitBase(path, branch, expectedHead string) (atBase, merged, known bo
 // holders, including missing paths; it is not an ownership or safety verdict.
 type GitBranchState = gitvcs.BranchState
 
-// ListGitWorkBranches returns sorted, deduplicated literal local and origin
-// branch names, excluding HEAD. It requires the Git backend and neither fetches
+// ListGitWorkBranches returns sorted literal local branch names, excluding
+// HEAD and remote-tracking refs. It requires the Git backend and neither fetches
 // nor modifies repository state.
 func ListGitWorkBranches(repo string) ([]string, error) {
 	if BackendNameFor(repo) != "git" {

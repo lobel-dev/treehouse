@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -524,6 +525,108 @@ func TestAcquire_InitialStateWriteFailureRecoversCreatedWorktree(t *testing.T) {
 	if len(state.Worktrees) != 1 || !state.Worktrees[0].Leased || state.Worktrees[0].LeaseHolder != recoveredLeaseHolder {
 		t.Fatalf("created worktree was not conservatively recovered: %#v", state.Worktrees)
 	}
+}
+
+func TestAcquire_ReleasesEmptySlotWhenWorktreeCreateFails(t *testing.T) {
+	repoDir, poolDir := setupRepo(t)
+	installGitWorktreeAddStub(t, false)
+	_, err := AcquireWithOptions(repoDir, poolDir, 4, nil, AcquireOptions{SkipFetch: true})
+	if err == nil || !strings.Contains(err.Error(), "failed to create worktree") {
+		t.Fatalf("expected worktree creation to fail, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(poolDir, "1")); !os.IsNotExist(statErr) {
+		t.Fatalf("empty reserved slot was not released: %v", statErr)
+	}
+	state, readErr := ReadState(poolDir)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(state.Worktrees) != 0 {
+		t.Fatalf("failed create persisted a worktree: %#v", state.Worktrees)
+	}
+}
+
+func TestAcquire_KeepsOccupiedSlotWhenWorktreeCreateFails(t *testing.T) {
+	repoDir, poolDir := setupRepo(t)
+	installGitWorktreeAddStub(t, true)
+	_, err := AcquireWithOptions(repoDir, poolDir, 4, nil, AcquireOptions{SkipFetch: true})
+	if err == nil || !strings.Contains(err.Error(), "failed to create worktree") {
+		t.Fatalf("expected worktree creation to fail, got %v", err)
+	}
+	keep := filepath.Join(poolDir, "1", filepath.Base(repoDir), "keep.txt")
+	data, readErr := os.ReadFile(keep)
+	if readErr != nil || string(data) != "keep" {
+		t.Fatalf("occupied slot content was removed: %q, %v", data, readErr)
+	}
+}
+
+func installGitWorktreeAddStub(t *testing.T, plant bool) {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	name := "git"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	src := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(src, []byte(`package main
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+func main() {
+	args := os.Args[1:]
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] != "worktree" || args[i+1] != "add" {
+			continue
+		}
+		var dest string
+		for _, a := range args[i+2:] {
+			if a == "--" || strings.HasPrefix(a, "-") {
+				continue
+			}
+			dest = a
+			break
+		}
+		if os.Getenv("TREEHOUSE_WORKTREE_ADD_PLANT") != "" && dest != "" {
+			if err := os.MkdirAll(dest, 0755); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			if err := os.WriteFile(filepath.Join(dest, "keep.txt"), []byte("keep"), 0644); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
+		fmt.Fprintln(os.Stderr, "simulated worktree add failure")
+		os.Exit(1)
+	}
+	cmd := exec.Command(os.Getenv("TREEHOUSE_REAL_GIT"), args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			os.Exit(ee.ExitCode())
+		}
+		os.Exit(1)
+	}
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.CommandContext(t.Context(), "go", "build", "-o", filepath.Join(dir, name), src).CombinedOutput(); err != nil {
+		t.Fatalf("build git stub: %s %v", out, err)
+	}
+	t.Setenv("TREEHOUSE_REAL_GIT", realGit)
+	if plant {
+		t.Setenv("TREEHOUSE_WORKTREE_ADD_PLANT", "1")
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 func TestAcquire_ReusedFinalStateWriteFailureQuarantinesNewSeeds(t *testing.T) {
