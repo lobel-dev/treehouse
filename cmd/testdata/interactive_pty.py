@@ -49,8 +49,6 @@ try:
         send("printf 'SHELL_READY\\n'\n")
         expect("SHELL_READY")
         send("exit\n")
-        expect("Choose a number: ")
-        send("q\n")
     else:
         expect("[y/N] ")
         send("y\n" if mode == "confirm" else "\n")

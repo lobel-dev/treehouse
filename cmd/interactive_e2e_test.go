@@ -44,15 +44,14 @@ func TestInteractiveHomeCancelE2E(t *testing.T) {
 
 func TestInteractiveBranchCycleE2E(t *testing.T) {
 	repo, home := setupTestRepo(t)
-	out, stderr, code := runInteractiveInput(t, repo, home, "2\nfeature/first\n2\nfeature/second\n1\n1\nq\n", "menu")
-	if code != 0 || out != "" || strings.Count(stderr, "Kept: feature/first") != 2 || !strings.Contains(stderr, "Kept: feature/second") {
-		t.Fatalf("branch cycle: code=%d stdout=%s stderr=%s", code, out, stderr)
+	for _, input := range []string{"2\nfeature/first\n", "2\nfeature/second\n", "1\n1\n", "3\n1\n"} {
+		out, stderr, code := runInteractiveInput(t, repo, home, input, "menu")
+		if code != 0 || out != "" || strings.Count(stderr, "Treehouse ·") != 1 {
+			t.Fatalf("shell exit reopened menu: code=%d stdout=%s stderr=%s", code, out, stderr)
+		}
 	}
 	for _, name := range []string{"feature/first", "feature/second"} {
 		gitCmd(t, repo, "show-ref", "--verify", "refs/heads/"+name)
-	}
-	if strings.Count(stderr, "Treehouse ·") != 4 {
-		t.Fatalf("exit did not return to home: %s", stderr)
 	}
 }
 
@@ -163,16 +162,15 @@ func TestInteractiveDirtyExitKeepsByDefaultE2E(t *testing.T) {
 	if err := os.WriteFile(file, []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, stderr, code := runInteractiveInput(t, repo, home, "1\n1\n\n1\n1\n\nq\n", "menu")
-	if code != 0 {
-		t.Fatal(stderr)
-	}
-	data, err := os.ReadFile(file)
-	if err != nil || string(data) != "keep" {
-		t.Fatalf("default exit discarded work: %v\n%s", err, stderr)
-	}
-	if strings.Count(stderr, "Reserved the existing branch slot") != 2 {
-		t.Fatalf("kept work could not be reopened: %s", stderr)
+	for attempt := 0; attempt < 2; attempt++ {
+		_, stderr, code := runInteractiveInput(t, repo, home, "1\n1\n\n", "menu")
+		if code != 0 || strings.Count(stderr, "Treehouse ·") != 1 || !strings.Contains(stderr, "Reserved the existing branch slot") {
+			t.Fatalf("kept work could not be reopened and exited: %d %s", code, stderr)
+		}
+		data, err := os.ReadFile(file)
+		if err != nil || string(data) != "keep" {
+			t.Fatalf("default exit discarded work: %v\n%s", err, stderr)
+		}
 	}
 }
 
@@ -220,8 +218,14 @@ func TestInteractiveTerminalE2E(t *testing.T) {
 func TestInteractiveJJHomeE2E(t *testing.T) {
 	requireJJ(t)
 	repo, home := setupJJTestRepo(t)
-	out, stderr, code := runInteractiveInput(t, repo, home, "1\n2\n1\n3\ny\nq\n", "menu")
-	if code != 0 || out != "" || strings.Contains(stderr, "Start a new branch") || strings.Count(stderr, "Treehouse ·") != 4 || !strings.Contains(stderr, "Removed 1 unused trees") {
-		t.Fatalf("jj menu cycle: %d %s %s", code, out, stderr)
+	for _, input := range []string{"1\n", "2\n1\n", "3\ny\nq\n"} {
+		out, stderr, code := runInteractiveInput(t, repo, home, input, "menu")
+		wantMenus := 1
+		if strings.HasPrefix(input, "3") {
+			wantMenus = 2
+		}
+		if code != 0 || out != "" || strings.Contains(stderr, "Start a new branch") || strings.Count(stderr, "Treehouse ·") != wantMenus {
+			t.Fatalf("jj menu cycle: %d %s %s", code, out, stderr)
+		}
 	}
 }

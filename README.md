@@ -39,7 +39,7 @@ Choose a number from the menu:
 - **Open an existing tree** - pick a tree by its branch and status. Its files stay as you leave them.
 - **Clean up unused trees** - review the trees and space to reclaim, then confirm removal.
 
-Type `exit` to return to the menu and choose different work. Choose `q` to leave Treehouse.
+Type `exit` to finish in the tree and return to your original terminal. Run `treehouse` again to choose different work. Choose `q` to cancel a menu.
 Unfinished changes are kept by default on exit; discarding them requires answering yes.
 
 Two shortcuts take you directly to a picker or cleanup:

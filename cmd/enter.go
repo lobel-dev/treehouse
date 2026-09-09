@@ -68,7 +68,8 @@ func init() {
 
 func enterRunE(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 && !cmd.Flags().Changed("branch") {
-		return chooseTree()
+		_, err := chooseTree()
+		return err
 	}
 	if cmd.Flags().Changed("branch") {
 		target, err := resolveCurrentBranchSlot(enterBranch)

@@ -34,7 +34,7 @@ func interactiveHome() error {
 		if vcs.BackendNameFor(repo) != "git" {
 			choices = []string{"Start working in a tree", "Open an existing tree", "Clean up unused trees"}
 		}
-		fmt.Fprintln(os.Stderr, "\nChoose work below. Type exit in the tree to come back and switch.")
+		fmt.Fprintln(os.Stderr, "\nChoose work below. Type exit in the tree to return to your terminal.")
 		selected, err := ui.Choose("Treehouse · "+filepath.Base(repo), choices, "Quit")
 		if err != nil || selected < 0 {
 			return err
@@ -42,19 +42,23 @@ func interactiveHome() error {
 		if vcs.BackendNameFor(repo) != "git" && selected > 0 {
 			selected++
 		}
+		var finished bool
 		switch selected {
 		case 0:
 			if vcs.BackendNameFor(repo) == "git" {
-				err = chooseWorkBranch(repo)
+				finished, err = chooseWorkBranch(repo)
 			} else {
-				err = runHomeWork("get")
+				finished, err = runHomeWork("get")
 			}
 		case 1:
-			err = startBranch(repo)
+			finished, err = startBranch(repo)
 		case 2:
-			err = chooseTree()
+			finished, err = chooseTree()
 		case 3:
 			err = interactivePrune()
+		}
+		if finished {
+			return err
 		}
 		if err != nil && !errors.Is(err, errReturnAborted) && !errors.Is(err, errReturnAbortedNonTTY) {
 			fmt.Fprintf(os.Stderr, "\n%s\n", err)
@@ -62,18 +66,18 @@ func interactiveHome() error {
 	}
 }
 
-func startBranch(repo string) error {
+func startBranch(repo string) (bool, error) {
 	for {
 		name, err := ui.ReadLine("Branch name (Enter to go back): ")
 		if err == io.EOF {
-			return nil
+			return false, nil
 		}
 		if err != nil {
-			return err
+			return false, err
 		}
 		name = strings.TrimSpace(name)
 		if name == "" {
-			return nil
+			return false, nil
 		}
 		if err := vcs.ValidateGitBranch(repo, name); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -83,20 +87,20 @@ func startBranch(repo string) error {
 	}
 }
 
-func chooseWorkBranch(repo string) error {
+func chooseWorkBranch(repo string) (bool, error) {
 	branches, err := vcs.ListGitWorkBranches(repo)
 	if err != nil {
-		return err
+		return false, err
 	}
 	_, slots, err := currentPoolSnapshot()
 	if err != nil {
-		return err
+		return false, err
 	}
 	var names, labels []string
 	for _, branch := range branches {
 		facts, err := vcs.InspectGitBranch(repo, branch)
 		if err != nil {
-			return err
+			return false, err
 		}
 		label := branch
 		if len(facts.Holders) > 0 {
@@ -123,11 +127,11 @@ func chooseWorkBranch(repo string) error {
 	}
 	if len(names) == 0 {
 		fmt.Fprintln(os.Stderr, "No available branches to resume. Start a new branch or open an existing tree.")
-		return nil
+		return false, nil
 	}
 	i, err := ui.Choose("Continue working", labels, "Back")
 	if err != nil || i < 0 {
-		return err
+		return false, err
 	}
 	return runHomeWork("work", names[i])
 }
@@ -138,14 +142,14 @@ func sameMenuPath(a, b string) bool {
 	return ea == nil && eb == nil && os.SameFile(aa, bb)
 }
 
-func chooseTree() error {
+func chooseTree() (bool, error) {
 	_, slots, err := currentPoolSnapshot()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if len(slots) == 0 {
 		fmt.Fprintln(os.Stderr, "No trees yet. Start a new branch from the home screen.")
-		return nil
+		return false, nil
 	}
 	labels := make([]string, len(slots))
 	for i, slot := range slots {
@@ -162,30 +166,33 @@ func chooseTree() error {
 		}
 		labels[i] = label
 	}
-	i, err := ui.Choose("Open a tree — exit brings you back; files stay as you leave them", labels, "Back")
+	i, err := ui.Choose("Open a tree - exit returns to your terminal; files stay as you leave them", labels, "Back")
 	if err != nil || i < 0 {
-		return err
+		return false, err
 	}
-	return enterWorktree(&slots[i])
+	return true, enterWorktree(&slots[i])
 }
 
-// Each acquired shell has its own lifecycle process. When unfinished work is
-// kept, that process exits and its temporary owner reservation expires, so
-// the home screen can immediately offer the branch again.
-func runHomeWork(args ...string) error {
+// Each acquired shell has its own lifecycle process. The boolean reports
+// that the command finished, so the home screen exits with it. Picker
+// cancellations return false and stay in the menu.
+func runHomeWork(args ...string) (bool, error) {
 	executable, err := os.Executable()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if rootFlag != "" {
 		args = append([]string{"--root", rootFlag}, args...)
 	}
 	child := exec.Command(executable, args...)
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
-	err = child.Run()
+	if err := child.Start(); err != nil {
+		return false, err
+	}
+	err = child.Wait()
 	var exited *exec.ExitError
 	if errors.As(err, &exited) {
-		return nil
+		return true, nil
 	} // The command already explained it.
-	return err
+	return true, err
 }

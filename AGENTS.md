@@ -36,7 +36,7 @@ make test
 
 ## Key Design Decisions
 
-- Interactive entry points live in `cmd/interactive.go` and `cmd/interactive_prune.go`: terminal-only bare `treehouse` opens the home screen; explicit `menu` can also read piped input. Acquired shells run as separate CLI processes so unfinished work can be resumed immediately after exit. Bare `enter` offers a snapshot picker; terminal `prune` previews and confirms, restricting execution to displayed paths and revalidating safety. Redirected bare root and prune retain their existing command behavior. `internal/ui.ReadLine` must not read ahead into child-shell input. Exit cleanup keeps unfinished changes by default.
+- Interactive entry points live in `cmd/interactive.go` and `cmd/interactive_prune.go`: terminal-only bare `treehouse` opens the home screen; explicit `menu` can also read piped input. Acquired shells run as separate CLI processes so unfinished work can be resumed immediately after exit. Exiting an opened shell ends the home command and returns to the original terminal; canceling a picker returns to the menu. Bare `enter` offers a snapshot picker; terminal `prune` previews and confirms, restricting execution to displayed paths and revalidating safety. Redirected bare root and prune retain their existing command behavior. `internal/ui.ReadLine` must not read ahead into child-shell input. Exit cleanup keeps unfinished changes by default.
 
 - No daemon - all operations are inline CLI commands
 - Detached HEAD worktrees reset to whichever of local or origin default branch is further ahead (prefers origin on divergence)

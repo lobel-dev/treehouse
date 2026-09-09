@@ -30,7 +30,7 @@ var rootCmd = &cobra.Command{
 so that multiple AI coding agents can work on the same repo in parallel.
 
 Run treehouse in a terminal to choose a branch or tree, start new work, or
-clean up unused trees. Type exit in a tree to return to the menu.
+clean up unused trees. Type exit in a tree to return to your terminal.
 With redirected input or output, bare treehouse keeps the get behavior.`,
 	Version:       version,
 	SilenceUsage:  true,
