@@ -25,9 +25,9 @@ type releasePleasePackage struct {
 
 // expectedReleaseOutputs derives the complete set of paths release-please
 // writes for this repository from release-please-config.json. The set is
-// the source of truth for pull_request path filters: every PR-triggered
+// the source of truth for pull_request path filters: every ordinary PR-triggered
 // workflow must exclude every path here, or release PRs start creating
-// action_required runs again.
+// action_required runs again. Required-check workflows must remain unfiltered.
 func expectedReleaseOutputs(cfg releasePleaseConfig) ([]string, error) {
 	if len(cfg.Packages) == 0 {
 		return nil, fmt.Errorf("release-please-config.json has no packages")
@@ -273,43 +273,54 @@ func matchGitHubPath(pattern, path string) bool {
 	return false
 }
 
-// workflowJobNames returns every job `name:` declared by a workflow. A workflow
-// that publishes a required status check is identified by these names, since a
-// required check's context is the job name GitHub reports.
-func workflowJobNames(data []byte) ([]string, error) {
-	var wf struct {
-		Jobs map[string]struct {
-			Name string `yaml:"name"`
-		} `yaml:"jobs"`
+func validatePullRequestReleaseFilter(filter pathFilter, required bool, expected []string) error {
+	if required {
+		if filter.kind != "none" {
+			return fmt.Errorf("required-check workflow must not filter by path (a filtered required check never reports)")
+		}
+		return nil
 	}
-	if err := yaml.Unmarshal(data, &wf); err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(wf.Jobs))
-	for _, job := range wf.Jobs {
-		if job.Name != "" {
-			names = append(names, job.Name)
+	var missing []string
+	for _, rel := range expected {
+		if !pathExcluded(filter, rel) {
+			missing = append(missing, rel)
 		}
 	}
-	sort.Strings(names)
-	return names, nil
+	if len(missing) > 0 {
+		return fmt.Errorf("pull_request filter must exclude every release-please output; missing: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
-// publishesRequiredCheck reports whether a workflow backs a required status
-// check on main. Such a workflow must NOT filter by path: a required check that
-// never runs never reports, and the pull request waits on it forever. Release
-// PRs are handled by the gate's own release-please exemption instead.
-func publishesRequiredCheck(data []byte) (bool, error) {
-	names, err := workflowJobNames(data)
-	if err != nil {
-		return false, err
+func TestPullRequestReleaseFilterPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		trigger  string
+		required bool
+		wantErr  bool
+	}{
+		{"ordinary unfiltered", "pull_request:", false, true},
+		{"ordinary ignores release", "pull_request:\n    paths-ignore: [CHANGELOG.md]", false, false},
+		{"ordinary allows source only", "pull_request:\n    paths: [main.go]", false, false},
+		{"required unfiltered", "pull_request:", true, false},
+		{"required ignore forbidden", "pull_request:\n    paths-ignore: [CHANGELOG.md]", true, true},
+		{"required allow forbidden", "pull_request:\n    paths: [main.go]", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			on, err := parseWorkflowOn([]byte("on:\n  " + tc.trigger + "\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			filter, hasPR, err := pullRequestPathFilter(on)
+			if err != nil || !hasPR {
+				t.Fatalf("pull_request filter: hasPR=%v, err=%v", hasPR, err)
+			}
+			err = validatePullRequestReleaseFilter(filter, tc.required, []string{"CHANGELOG.md"})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("policy error = %v, wantErr=%v", err, tc.wantErr)
+			}
+		})
 	}
-	for _, name := range names {
-		if name == requiredCheckContext {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func TestPullRequestWorkflowsExcludeReleasePleaseOutputs(t *testing.T) {
@@ -336,7 +347,12 @@ func TestPullRequestWorkflowsExcludeReleasePleaseOutputs(t *testing.T) {
 		t.Fatalf("read .github/workflows: %v", err)
 	}
 
-	var prWorkflows, requiredCheckWorkflows int
+	// Add a workflow filename here only when its check is configured as required
+	// in repository settings. There are no required-check workflows today.
+	// These workflows must report even on release PRs, so path filters are forbidden.
+	requiredCheckWorkflows := map[string]bool{}
+
+	var prWorkflows int
 	for _, ent := range entries {
 		if ent.IsDir() {
 			continue
@@ -361,40 +377,15 @@ func TestPullRequestWorkflowsExcludeReleasePleaseOutputs(t *testing.T) {
 		if !hasPR {
 			continue
 		}
-		required, err := publishesRequiredCheck(data)
-		if err != nil {
-			t.Fatalf("parse jobs in %s: %v", path, err)
-		}
-		if required {
-			requiredCheckWorkflows++
-			t.Logf("%s backs the %q required check; path filters are forbidden there, not required", path, requiredCheckContext)
-			if filter.kind != "none" {
-				t.Errorf("%s backs a required check and must not filter by path (a filtered required check never reports)", path)
-			}
-			continue
-		}
 		prWorkflows++
 
-		var missing []string
-		for _, rel := range expected {
-			if !pathExcluded(filter, rel) {
-				missing = append(missing, rel)
-			}
-		}
-		if len(missing) > 0 {
-			t.Errorf("%s pull_request filter must exclude every release-please output; missing: %s",
-				path, strings.Join(missing, ", "))
+		if err := validatePullRequestReleaseFilter(filter, requiredCheckWorkflows[name], expected); err != nil {
+			t.Errorf("%s: %v", path, err)
 		}
 	}
 
 	if prWorkflows == 0 {
 		t.Fatal("no pull_request-triggered workflows found under .github/workflows")
-	}
-	// Exactly the no-mistakes gate is exempt today. A second exemption means a
-	// new workflow claimed the required-check name, which needs a look.
-	if requiredCheckWorkflows != 1 {
-		t.Fatalf("expected exactly 1 pull_request workflow backing the %q required check, found %d",
-			requiredCheckContext, requiredCheckWorkflows)
 	}
 }
 
