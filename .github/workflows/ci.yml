@@ -55,7 +55,8 @@ jobs:
           go-version-file: go.mod
 
       - name: Test
-        run: go test ./...
+        # The full Windows CLI suite exceeds Go's default per-package 10m budget.
+        run: go test -timeout 20m ./...
 
       - name: Build
         run: go build -o treehouse${{ matrix.os == 'windows-latest' && '.exe' || '' }} .

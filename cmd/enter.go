@@ -16,9 +16,11 @@ import (
 )
 
 var enterCmd = &cobra.Command{
-	Use:   "enter <name|pool/name> | enter --branch <branch>",
-	Short: "Open a subshell in an existing worktree by name, even if in use",
-	Long: `Open a subshell in an existing pool worktree identified by its name
+	Use:   "enter [name|pool/name] | enter --branch <branch>",
+	Short: "Choose an existing tree and open a shell",
+	Long: `Run treehouse enter without a name to choose from your existing trees.
+
+Open a subshell in an existing pool worktree identified by its name
 (the number shown by 'treehouse status'), including worktrees that are
 already in use.
 
@@ -47,6 +49,9 @@ directory, e.g. 'cd "$(treehouse enter --print-path 1)"'.`,
 			}
 			return nil
 		}
+		if len(args) == 0 && !enterPrintPath {
+			return nil
+		}
 		return cobra.ExactArgs(1)(cmd, args)
 	},
 	RunE: enterRunE,
@@ -62,6 +67,10 @@ func init() {
 }
 
 func enterRunE(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 && !cmd.Flags().Changed("branch") {
+		_, err := chooseTree()
+		return err
+	}
 	if cmd.Flags().Changed("branch") {
 		target, err := resolveCurrentBranchSlot(enterBranch)
 		if err != nil {

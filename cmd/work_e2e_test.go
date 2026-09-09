@@ -137,7 +137,7 @@ func TestWorkBranchDecisionsE2E(t *testing.T) {
 					t.Fatal(err)
 				}
 				// EOF at the cleanup prompt must leave dirty work intact.
-				wantCode, wantText = 1, "Clean worktree and return"
+				wantCode, wantText = 1, "Discard uncommitted changes and return"
 			case "shell-failure":
 				env = []string{"SHELL=" + filepath.Join(home, "missing-shell"), "COMSPEC=" + filepath.Join(home, "missing-shell")}
 				wantCode, wantText = 1, "attempting guarded return"

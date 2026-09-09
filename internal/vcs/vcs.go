@@ -629,6 +629,29 @@ func InspectGitBase(path, branch, expectedHead string) (atBase, merged, known bo
 // holders, including missing paths; it is not an ownership or safety verdict.
 type GitBranchState = gitvcs.BranchState
 
+// ListGitWorkBranches returns sorted, deduplicated literal local and origin
+// branch names, excluding HEAD. It requires the Git backend and neither fetches
+// nor modifies repository state.
+func ListGitWorkBranches(repo string) ([]string, error) {
+	if BackendNameFor(repo) != "git" {
+		return nil, fmt.Errorf("branch selection requires Git")
+	}
+	return gitvcs.ListWorkBranches(repo)
+}
+
+// GitWorkBranch is an advisory branch name and registered-holder snapshot.
+type GitWorkBranch = gitvcs.WorkBranch
+
+// ListGitWorkBranchStates returns ListGitWorkBranches names with their holders
+// using bulk scans. It requires the Git backend and is read-only; selected
+// branches must still be revalidated by the branch workflow before use.
+func ListGitWorkBranchStates(repo string) ([]GitWorkBranch, error) {
+	if BackendNameFor(repo) != "git" {
+		return nil, fmt.Errorf("branch selection requires Git")
+	}
+	return gitvcs.ListWorkBranchStates(repo)
+}
+
 // VerifyGitSlotRepository requires a Git-marked slot at path and verifies that
 // its common Git directory has the same filesystem identity as repo's, read-only.
 func VerifyGitSlotRepository(repo, path string) error {

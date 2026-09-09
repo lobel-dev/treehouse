@@ -32,7 +32,9 @@ A worktree is stale only when treehouse manages it, no owner reservation or
 running process is using it, it has no uncommitted changes, and its HEAD is
 already merged into the default branch.
 
-Prune is a dry run by default. Pass --yes to delete the listed candidates.
+In a terminal, prune shows the removable trees and asks before deleting.
+Press Enter to cancel. With redirected input or output, prune is a dry run.
+Pass --yes to delete eligible trees without the confirmation prompt.
 Backing-repository-missing orphans are reported by default. Pass --prune-orphans
 to include them as unverified candidates, and combine it with --yes to delete
 them.
@@ -42,6 +44,9 @@ repository from git metadata and requires the configured root to be unset or
 absolute.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !pruneYes && ui.IsInteractive() {
+			return interactivePrune()
+		}
 		if pruneAll || pruneGlobal {
 			cfg, err := config.LoadGlobal()
 			if err != nil {
