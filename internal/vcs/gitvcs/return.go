@@ -16,7 +16,11 @@ func ReturnWorktree(worktreePath, branch, fallback string, seededPaths []string,
 	return returnWorktree(worktreePath, branch, fallback, seededPaths, beforeReset, nil)
 }
 
-// ReturnReport describes a successful reset. Optional observations never authorize it.
+// ReturnReport describes a return attempt; Parked indicates a completed reset.
+// Identities are captured under the return locks. Subject and change counts are
+// best-effort observations (counts are known only when ChangesKnown is true), not
+// cleanup authorization or a deletion audit. Text such as Subject is unescaped
+// repository data; callers must escape it for their output medium.
 type ReturnReport struct {
 	Parked         bool
 	TargetBranch   string
@@ -30,7 +34,12 @@ type ReturnReport struct {
 	UntrackedPaths int
 }
 
-// ReturnWorktreeReport captures protected identities inside the return locks.
+// ReturnWorktreeReport performs ReturnWorktree and captures protected identities
+// inside the same HEAD and containing-ref locks. Target resolution may use
+// fallback only before preparation; beforeReset runs under those locks before
+// file updates. Errors can carry partial observations with Parked false, and
+// callback effects or partial file updates are not rolled back. No pool state is
+// persisted by this function.
 func ReturnWorktreeReport(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (ReturnReport, error) {
 	var report ReturnReport
 	_, err := returnWorktree(worktreePath, branch, fallback, seededPaths, beforeReset, &report)

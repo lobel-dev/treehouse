@@ -1404,6 +1404,10 @@ func TestDestroyWorktree_WithoutIncludeInUseSkipsInUseWorktree(t *testing.T) {
 	if !hasDestroySkip(result.Skipped, wtPath, DestroyInUse, IncludeInUseFlag) {
 		t.Fatalf("expected in-use skip with %s, got %#v", IncludeInUseFlag, result.Skipped)
 	}
+	wantComparisons := []MergeComparison{{Ref: "refs/remotes/origin/main", Result: "merged"}}
+	if got := result.Skipped[0].Target.Facts.Comparisons; !reflect.DeepEqual(got, wantComparisons) {
+		t.Errorf("in-use comparisons = %#v, want %#v", got, wantComparisons)
+	}
 	if _, err := os.Stat(wtPath); err != nil {
 		t.Fatalf("expected reserved worktree to remain on disk: %v", err)
 	}

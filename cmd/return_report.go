@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/kunchenguid/treehouse/internal/pool"
 	"github.com/kunchenguid/treehouse/internal/vcs"
@@ -33,7 +35,7 @@ func printReleaseReport(report pool.ReleaseReport, forced, confirmed bool) {
 	}
 	detail := head
 	if report.Subject != "" {
-		detail = report.Subject + "; " + head
+		detail = escapeReturnSubject(report.Subject) + "; " + head
 	}
 	fmt.Fprintf(os.Stderr, "Kept: %s (%s)\n", ref, detail)
 	if report.ChangesKnown && report.TrackedPaths+report.UntrackedPaths > 0 {
@@ -51,8 +53,26 @@ func printReleaseReport(report pool.ReleaseReport, forced, confirmed bool) {
 		if rootFlag != "" {
 			command += " --root " + quoteReturnPath(rootFlag)
 		}
-		fmt.Fprintf(os.Stderr, "\nResume: %s work %s\n", command, quoteReturnPath(report.AttachedBranch))
+		if strings.HasPrefix(report.AttachedBranch, "-") {
+			// Git plumbing can create refs that the literal work command rejects.
+			fmt.Fprintf(os.Stderr, "\nResume: %s get, then git switch -- %s\n", command, quoteReturnPath(report.AttachedBranch))
+		} else {
+			fmt.Fprintf(os.Stderr, "\nResume: %s work %s\n", command, quoteReturnPath(report.AttachedBranch))
+		}
 	}
+}
+
+func escapeReturnSubject(subject string) string {
+	var escaped strings.Builder
+	for _, r := range subject {
+		if strconv.IsPrint(r) {
+			escaped.WriteRune(r)
+		} else {
+			quoted := strconv.QuoteRune(r)
+			escaped.WriteString(quoted[1 : len(quoted)-1])
+		}
+	}
+	return escaped.String()
 }
 
 func returnErrorRemedy(path string, err error) error {

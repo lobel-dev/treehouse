@@ -7,6 +7,9 @@ import (
 	"github.com/kunchenguid/treehouse/internal/vcs"
 )
 
+// WorkAcquisition identifies a reserved slot. Reclaimed means its existing
+// branch checkout was preserved without reset, seeding, or creation hooks.
+// A nonempty Path requires guarded caller cleanup, even on acquisition error.
 type WorkAcquisition struct {
 	Path      string
 	Reclaimed bool
@@ -72,6 +75,10 @@ func ReclaimBranch(repo, dir, path, branch string) (string, error) {
 		if err != nil {
 			return err
 		}
+		state, err = healState(dir, state)
+		if err != nil {
+			return err
+		}
 		var entry *WorktreeEntry
 		for i := range state.Worktrees {
 			if sameExistingPath(state.Worktrees[i].Path, path) {
@@ -123,6 +130,9 @@ func ReclaimBranch(repo, dir, path, branch string) (string, error) {
 	return reclaimed, err
 }
 
+// SwitchOwnedBranch switches a slot only while it is unleased and reserved by
+// this caller, holding the pool lock through Git's checkout operation.
+// On failure the caller must still perform guarded cleanup; no branch is deleted.
 func SwitchOwnedBranch(repo, dir, path, branch string) error {
 	return WithStateLock(dir, func() error {
 		state, err := ReadState(dir)
