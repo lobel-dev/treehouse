@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/kunchenguid/treehouse/internal/pool"
 	"github.com/kunchenguid/treehouse/internal/vcs"
@@ -33,7 +35,7 @@ func printReleaseReport(report pool.ReleaseReport, forced, confirmed bool) {
 	}
 	detail := head
 	if report.Subject != "" {
-		detail = report.Subject + "; " + head
+		detail = escapeReturnSubject(report.Subject) + "; " + head
 	}
 	fmt.Fprintf(os.Stderr, "Kept: %s (%s)\n", ref, detail)
 	if report.ChangesKnown && report.TrackedPaths+report.UntrackedPaths > 0 {
@@ -47,8 +49,21 @@ func printReleaseReport(report pool.ReleaseReport, forced, confirmed bool) {
 		fmt.Fprintf(os.Stderr, "Changes observed before %s: %d tracked paths, %d untracked paths.\n", mode, report.TrackedPaths, report.UntrackedPaths)
 	}
 	if report.AttachedBranch != "" {
-		fmt.Fprintf(os.Stderr, "\nResume: treehouse get, then git switch %s\n", quoteReturnPath(report.AttachedBranch))
+		fmt.Fprintf(os.Stderr, "\nResume: treehouse get, then git switch -- %s\n", quoteReturnPath(report.AttachedBranch))
 	}
+}
+
+func escapeReturnSubject(subject string) string {
+	var escaped strings.Builder
+	for _, r := range subject {
+		if strconv.IsPrint(r) {
+			escaped.WriteRune(r)
+		} else {
+			quoted := strconv.QuoteRune(r)
+			escaped.WriteString(quoted[1 : len(quoted)-1])
+		}
+	}
+	return escaped.String()
 }
 
 func returnErrorRemedy(path string, err error) error {
