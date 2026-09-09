@@ -413,12 +413,23 @@ func acquire(repoRoot, poolDir string, poolSize int, postCreate []string, opts a
 		}
 
 		name := nextName(state)
+		// State cannot account for every occupied path: an application may
+		// recreate ignored files after a worktree was removed. Reserve a new
+		// slot exclusively so unmanaged directories, files, and symlinks are
+		// never reused or overwritten.
+		for {
+			err := os.Mkdir(filepath.Join(poolDir, name), 0755)
+			if err == nil {
+				break
+			}
+			if !os.IsExist(err) {
+				return fmt.Errorf("reserving worktree slot %s: %w", name, err)
+			}
+			n, _ := strconv.Atoi(name)
+			name = strconv.Itoa(n + 1)
+		}
 		repoName := filepath.Base(repoRoot)
 		wtPath := filepath.Join(poolDir, name, repoName)
-
-		if err := os.MkdirAll(filepath.Dir(wtPath), 0755); err != nil {
-			return err
-		}
 
 		// Clear any stale worktree bookkeeping left behind by a crashed or
 		// forcibly removed worktree. Without this, git rejects the add with

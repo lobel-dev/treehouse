@@ -1514,7 +1514,9 @@ func TestGetRecoversFromStaleWorktreeRegistration(t *testing.T) {
 		t.Fatalf("mkdir slot parent: %v", err)
 	}
 	gitCmd(t, repoDir, "worktree", "add", "--detach", stalePath, "main")
-	if err := os.RemoveAll(stalePath); err != nil {
+	// Remove the slot container too so allocation targets the same path;
+	// an existing container is now preserved as potentially unmanaged data.
+	if err := os.RemoveAll(filepath.Dir(stalePath)); err != nil {
 		t.Fatalf("remove stale worktree dir: %v", err)
 	}
 
