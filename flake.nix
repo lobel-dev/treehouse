@@ -34,7 +34,7 @@
             pname = "treehouse";
             inherit version;
             src = pkgs.lib.cleanSource ./.;
-            vendorHash = "sha256-z8IndcHcZ6nLqhLtAYul3ppddpOA4AHGQWIlfYY/pfI=";
+            vendorHash = "sha256-qd91jvSGxCvUSp+hhZJD+2XiHyVN5pP1NWQyRXIrhL8=";
             ldflags = [
               "-X main.version=v${version}"
             ];
