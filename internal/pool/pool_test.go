@@ -538,7 +538,10 @@ func TestAcquire_ReleasesEmptySlotWhenWorktreeCreateFails(t *testing.T) {
 		t.Fatalf("empty reserved slot was not released: %v", statErr)
 	}
 	state, readErr := ReadState(poolDir)
-	if readErr == nil && len(state.Worktrees) != 0 {
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(state.Worktrees) != 0 {
 		t.Fatalf("failed create persisted a worktree: %#v", state.Worktrees)
 	}
 }
@@ -616,7 +619,7 @@ func main() {
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command("go", "build", "-o", filepath.Join(dir, name), src).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(t.Context(), "go", "build", "-o", filepath.Join(dir, name), src).CombinedOutput(); err != nil {
 		t.Fatalf("build git stub: %s %v", out, err)
 	}
 	t.Setenv("TREEHOUSE_REAL_GIT", realGit)
