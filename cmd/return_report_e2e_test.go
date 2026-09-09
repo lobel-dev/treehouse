@@ -11,7 +11,8 @@ import (
 
 func TestReturnReportsProtectedBranchE2E(t *testing.T) {
 	repo, home := setupTestRepo(t)
-	out, stderr, code := runTreehouse(t, repo, home, nil, "get", "--lease")
+	root := filepath.Join(home, "custom root")
+	out, stderr, code := runTreehouse(t, repo, home, nil, "--root", root, "get", "--lease")
 	if code != 0 {
 		t.Fatalf("allocate: %s", stderr)
 	}
@@ -19,9 +20,12 @@ func TestReturnReportsProtectedBranchE2E(t *testing.T) {
 	gitCmd(t, path, "switch", "-c", "feature/report")
 	gitCmd(t, path, "commit", "--allow-empty", "-m", "Protected work")
 	head := strings.TrimSpace(gitCmd(t, path, "rev-parse", "HEAD"))
-	out, stderr, code = runTreehouse(t, repo, home, nil, "return", path)
+	out, stderr, code = runTreehouse(t, repo, home, nil, "--root", root, "return", path)
 	if code != 0 || out != "" {
 		t.Fatalf("return: code=%d stdout=%q stderr=%s", code, out, stderr)
+	}
+	if want := "Resume: treehouse --root " + quoteReturnPath(root) + " work " + quoteReturnPath("feature/report"); !strings.Contains(stderr, want) {
+		t.Fatalf("missing root-preserving work hint %q in %s", want, stderr)
 	}
 	for _, want := range []string{"parked, reset to main", "Kept: feature/report", "Protected work", head[:12], "work " + quoteReturnPath("feature/report")} {
 		if !strings.Contains(stderr, want) {
@@ -30,6 +34,61 @@ func TestReturnReportsProtectedBranchE2E(t *testing.T) {
 	}
 	if got := strings.TrimSpace(gitCmd(t, repo, "rev-parse", "refs/heads/feature/report")); got != head {
 		t.Fatalf("branch changed: %s", got)
+	}
+}
+
+func TestReturnReportEscapesSubjectE2E(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	out, stderr, code := runTreehouse(t, repo, home, nil, "get", "--lease")
+	if code != 0 {
+		t.Fatalf("allocate: %s", stderr)
+	}
+	path := strings.TrimSpace(out)
+	gitCmd(t, path, "switch", "-c", "feature/report")
+	gitCmd(t, path, "commit", "--allow-empty", "-m", "Protected café\x1b[2Jwork\rspoof\t\x07\x7f\u009b")
+	out, stderr, code = runTreehouse(t, repo, home, nil, "return", path)
+	if code != 0 || out != "" {
+		t.Fatalf("return: code=%d stdout=%q stderr=%q", code, out, stderr)
+	}
+	if strings.ContainsAny(stderr, "\x1b\r\t\x07\x7f\u009b") {
+		t.Fatalf("terminal controls emitted: %q", stderr)
+	}
+	if !strings.Contains(stderr, `Protected café\x1b[2Jwork\rspoof\t\a\x7f\u009b`) {
+		t.Fatalf("subject not visibly escaped: %q", stderr)
+	}
+}
+
+func TestReturnReportResumeOptionLikeBranchE2E(t *testing.T) {
+	for _, branch := range []string{"-feature", "--detach"} {
+		t.Run(branch, func(t *testing.T) {
+			repo, home := setupTestRepo(t)
+			out, stderr, code := runTreehouse(t, repo, home, nil, "get", "--lease")
+			if code != 0 {
+				t.Fatalf("allocate: %s", stderr)
+			}
+			path := strings.TrimSpace(out)
+			// Plumbing can create and attach refs that `switch -c` refuses.
+			gitCmd(t, path, "update-ref", "refs/heads/"+branch, "HEAD")
+			gitCmd(t, path, "symbolic-ref", "HEAD", "refs/heads/"+branch)
+			gitCmd(t, path, "commit", "--allow-empty", "-m", "Protected work")
+			head := strings.TrimSpace(gitCmd(t, path, "rev-parse", "HEAD"))
+			out, stderr, code = runTreehouse(t, repo, home, nil, "return", path)
+			if code != 0 || out != "" {
+				t.Fatalf("return: code=%d stdout=%q stderr=%s", code, out, stderr)
+			}
+			want := "Resume: treehouse get, then git switch -- " + quoteReturnPath(branch)
+			if !strings.Contains(stderr, want) {
+				t.Fatalf("missing %q in %s", want, stderr)
+			}
+			// Exercise the advertised Git arguments, not just the rendered text.
+			gitCmd(t, path, "switch", "--", branch)
+			if got := strings.TrimSpace(gitCmd(t, path, "symbolic-ref", "HEAD")); got != "refs/heads/"+branch {
+				t.Fatalf("resume attached to %q", got)
+			}
+			if got := strings.TrimSpace(gitCmd(t, path, "rev-parse", "HEAD")); got != head {
+				t.Fatalf("resume changed HEAD: %s", got)
+			}
+		})
 	}
 }
 

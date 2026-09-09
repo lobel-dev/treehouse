@@ -11,6 +11,20 @@ import (
 	"time"
 )
 
+func TestLsRejectsPositionalArgsE2E(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	for _, flags := range [][]string{nil, {"--json"}, {"--all"}, {"--global", "--json"}} {
+		args := append([]string{"ls"}, flags...)
+		args = append(args, "typo")
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			out, stderr, code := runTreehouse(t, repo, home, nil, args...)
+			if code == 0 || out != "" || !strings.Contains(stderr, `unknown command "typo"`) {
+				t.Fatalf("expected argument rejection without listing: exit=%d stdout=%q stderr=%q", code, out, stderr)
+			}
+		})
+	}
+}
+
 func parkedHistorySlot(t *testing.T, repo, home string) string {
 	t.Helper()
 	path := idleReportingSlot(t, repo, home)

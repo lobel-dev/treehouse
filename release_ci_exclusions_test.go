@@ -25,9 +25,9 @@ type releasePleasePackage struct {
 
 // expectedReleaseOutputs derives the complete set of paths release-please
 // writes for this repository from release-please-config.json. The set is
-// the source of truth for pull_request path filters: every PR-triggered
+// the source of truth for pull_request path filters: every ordinary PR-triggered
 // workflow must exclude every path here, or release PRs start creating
-// action_required runs again.
+// action_required runs again. Required-check workflows must remain unfiltered.
 func expectedReleaseOutputs(cfg releasePleaseConfig) ([]string, error) {
 	if len(cfg.Packages) == 0 {
 		return nil, fmt.Errorf("release-please-config.json has no packages")
@@ -273,6 +273,56 @@ func matchGitHubPath(pattern, path string) bool {
 	return false
 }
 
+func validatePullRequestReleaseFilter(filter pathFilter, required bool, expected []string) error {
+	if required {
+		if filter.kind != "none" {
+			return fmt.Errorf("required-check workflow must not filter by path (a filtered required check never reports)")
+		}
+		return nil
+	}
+	var missing []string
+	for _, rel := range expected {
+		if !pathExcluded(filter, rel) {
+			missing = append(missing, rel)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("pull_request filter must exclude every release-please output; missing: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func TestPullRequestReleaseFilterPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		trigger  string
+		required bool
+		wantErr  bool
+	}{
+		{"ordinary unfiltered", "pull_request:", false, true},
+		{"ordinary ignores release", "pull_request:\n    paths-ignore: [CHANGELOG.md]", false, false},
+		{"ordinary allows source only", "pull_request:\n    paths: [main.go]", false, false},
+		{"required unfiltered", "pull_request:", true, false},
+		{"required ignore forbidden", "pull_request:\n    paths-ignore: [CHANGELOG.md]", true, true},
+		{"required allow forbidden", "pull_request:\n    paths: [main.go]", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			on, err := parseWorkflowOn([]byte("on:\n  " + tc.trigger + "\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			filter, hasPR, err := pullRequestPathFilter(on)
+			if err != nil || !hasPR {
+				t.Fatalf("pull_request filter: hasPR=%v, err=%v", hasPR, err)
+			}
+			err = validatePullRequestReleaseFilter(filter, tc.required, []string{"CHANGELOG.md"})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("policy error = %v, wantErr=%v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestPullRequestWorkflowsExcludeReleasePleaseOutputs(t *testing.T) {
 	cfgBytes, err := os.ReadFile("release-please-config.json")
 	if err != nil {
@@ -296,6 +346,11 @@ func TestPullRequestWorkflowsExcludeReleasePleaseOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read .github/workflows: %v", err)
 	}
+
+	// Add a workflow filename here only when its check is configured as required
+	// in repository settings. There are no required-check workflows today.
+	// These workflows must report even on release PRs, so path filters are forbidden.
+	requiredCheckWorkflows := map[string]bool{}
 
 	var prWorkflows int
 	for _, ent := range entries {
@@ -324,22 +379,14 @@ func TestPullRequestWorkflowsExcludeReleasePleaseOutputs(t *testing.T) {
 		}
 		prWorkflows++
 
-		var missing []string
-		for _, rel := range expected {
-			if !pathExcluded(filter, rel) {
-				missing = append(missing, rel)
-			}
-		}
-		if len(missing) > 0 {
-			t.Errorf("%s pull_request filter must exclude every release-please output; missing: %s",
-				path, strings.Join(missing, ", "))
+		if err := validatePullRequestReleaseFilter(filter, requiredCheckWorkflows[name], expected); err != nil {
+			t.Errorf("%s: %v", path, err)
 		}
 	}
 
 	if prWorkflows == 0 {
 		t.Fatal("no pull_request-triggered workflows found under .github/workflows")
 	}
-
 }
 
 func TestExpectedReleaseOutputsIncludesConfiguredExtraFiles(t *testing.T) {
