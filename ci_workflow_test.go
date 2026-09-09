@@ -36,6 +36,34 @@ func TestCIWorkflowSupportsStackedPullRequests(t *testing.T) {
 	}
 }
 
+func TestCIWorkflowRunsFullSuiteWithBoundedTimeout(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(data, &wf); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range wf.Jobs["test"].Steps {
+		if step.Name == "Test" {
+			// The expanded Windows CLI suite exceeds Go's default 10m budget.
+			if got, want := strings.TrimSpace(step.Run), "go test -timeout 20m ./..."; got != want {
+				t.Fatalf("CI test command = %q, want %q to run all tests with a bounded budget", got, want)
+			}
+			return
+		}
+	}
+	t.Fatal("CI test job has no Test step")
+}
+
 func TestCIWorkflowUsesReadOnlyUnpersistedCredentials(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(".github", "workflows", "ci.yml"))
 	if err != nil {
