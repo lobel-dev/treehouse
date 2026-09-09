@@ -223,12 +223,28 @@ func TestInteractiveTerminalE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"home", "cancel", "confirm"} {
+	for _, mode := range []string{"home", "resume", "browse", "open", "empty", "dumb", "local-only", "cancel", "confirm"} {
 		t.Run(mode, func(t *testing.T) {
 			repo, home := setupTestRepo(t)
+			if mode == "local-only" {
+				gitCmd(t, repo, "branch", "zz-local-work")
+				gitCmd(t, repo, "update-ref", "refs/remotes/origin/remote-only", "HEAD")
+			}
 			var path string
-			if mode != "home" {
+			if mode == "cancel" || mode == "confirm" || mode == "browse" || mode == "open" || mode == "resume" {
 				path = idleReportingSlot(t, repo, home)
+			}
+			if mode == "browse" || mode == "open" || mode == "resume" {
+				gitCmd(t, path, "switch", "-c", "feature/terminal")
+			}
+			var statePath string
+			var before []byte
+			if path != "" {
+				statePath = filepath.Join(filepath.Dir(filepath.Dir(path)), "treehouse-state.json")
+				before, err = os.ReadFile(statePath)
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			child := exec.Command(python, driver, treehouseBin, mode)
 			child.Dir = repo
@@ -236,6 +252,12 @@ func TestInteractiveTerminalE2E(t *testing.T) {
 			out, err := child.CombinedOutput()
 			if err != nil {
 				t.Fatalf("terminal flow: %v\n%s", err, out)
+			}
+			if mode == "browse" || mode == "open" || mode == "cancel" {
+				after, readErr := os.ReadFile(statePath)
+				if readErr != nil || !bytes.Equal(before, after) {
+					t.Fatalf("cancel changed state: %v", readErr)
+				}
 			}
 			if mode == "home" {
 				gitCmd(t, repo, "show-ref", "--verify", "refs/heads/feature/terminal")

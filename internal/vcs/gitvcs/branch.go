@@ -24,11 +24,11 @@ type BranchState struct {
 	Holders []BranchHolder
 }
 
-// ListWorkBranches returns sorted, deduplicated local and origin branch names.
-// Names are literal (without ref prefixes); HEAD and other remotes are excluded.
+// ListWorkBranches returns sorted local branch names for resuming work.
+// Remote-tracking refs are excluded: a cached origin ref is not local work.
 // It reads refs without fetching or modifying the repository.
 func ListWorkBranches(repo string) ([]string, error) {
-	out, err := runGit(repo, "for-each-ref", "--format=%(refname)", "refs/heads/", "refs/remotes/origin/")
+	out, err := runGit(repo, "for-each-ref", "--format=%(refname)", "refs/heads/")
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +38,6 @@ func ListWorkBranches(repo string) ([]string, error) {
 		switch {
 		case strings.HasPrefix(ref, "refs/heads/"):
 			name = strings.TrimPrefix(ref, "refs/heads/")
-		case strings.HasPrefix(ref, "refs/remotes/origin/"):
-			name = strings.TrimPrefix(ref, "refs/remotes/origin/")
 		}
 		if name != "" && name != "HEAD" {
 			names[name] = true

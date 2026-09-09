@@ -42,7 +42,7 @@ func TestListWorkBranchStates(t *testing.T) {
 				t.Fatalf("holder flags: %+v", branch.Holders)
 			}
 		}
-		if want := []string{"feature/held", "main", "remote-only"}; !reflect.DeepEqual(names, want) {
+		if want := []string{"feature/held", "main"}; !reflect.DeepEqual(names, want) {
 			t.Fatalf("names: %v want %v", names, want)
 		}
 		if after := mustGitOutput(t, repo, "worktree", "list", "--porcelain"); before != after {
