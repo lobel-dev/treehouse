@@ -629,6 +629,15 @@ func InspectGitBase(path, branch, expectedHead string) (atBase, merged, known bo
 // holders, including missing paths; it is not an ownership or safety verdict.
 type GitBranchState = gitvcs.BranchState
 
+// VerifyGitSlotRepository requires a Git-marked slot at path and verifies that
+// its common Git directory has the same filesystem identity as repo's, read-only.
+func VerifyGitSlotRepository(repo, path string) error {
+	if WorktreeBackendName(path) != "git" {
+		return fmt.Errorf("target %s is not a Git slot", path)
+	}
+	return gitvcs.VerifySlotRepository(repo, path)
+}
+
 // ValidateGitBranch requires the Git backend and validates a literal branch
 // name without resolving revisions or requiring the branch to exist.
 func ValidateGitBranch(repo, branch string) error {

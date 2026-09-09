@@ -23,6 +23,7 @@ var (
 	destroyIncludeUnlanded bool
 	destroyIncludeInUse    bool
 	destroyIncludeLeased   bool
+	destroySlot            string
 )
 
 var destroyCmd = &cobra.Command{
@@ -34,6 +35,7 @@ worktree even though it still has unlanded work, but it is safe by default.
 Targets are narrow and explicit:
 
   treehouse destroy <worktree-path>        Target exactly one worktree.
+  treehouse destroy --slot <name>          Target one current-pool slot.
   treehouse destroy <pool-path> --all      Target all worktrees in THAT pool.
 
 There is no cross-pool or global destroy; --all without a pool path is an error.
@@ -64,6 +66,7 @@ Migrating from the removed --force flag: replace it with the specific
 func init() {
 	destroyCmd.Flags().BoolVar(&destroyAll, "all", false, "Remove all worktrees in the named pool (requires a pool path)")
 	destroyCmd.Flags().BoolVar(&destroyYes, "yes", false, "Execute the removal instead of doing a dry run")
+	destroyCmd.Flags().StringVar(&destroySlot, "slot", "", "Target a named slot in the current pool (not valid with --include-leased or --all)")
 	destroyCmd.Flags().BoolVar(&destroyIncludeUnlanded, "include-unlanded", false, "Also remove dirty, unmerged, or unverified worktrees (irreversible data loss)")
 	destroyCmd.Flags().BoolVar(&destroyIncludeInUse, "include-in-use", false, "Also remove worktrees with a running process or owner reservation (processes terminated cleanly first)")
 	destroyCmd.Flags().BoolVar(&destroyIncludeLeased, "include-leased", false, "Also remove a leased worktree; only when the exact path is named, never via --all")
@@ -71,6 +74,19 @@ func init() {
 }
 
 func destroyRunE(cmd *cobra.Command, args []string) error {
+	if cmd.Flags().Changed("slot") {
+		if len(args) > 0 {
+			return fmt.Errorf("--slot and positional targets are mutually exclusive")
+		}
+		if destroyAll || destroyIncludeLeased {
+			return fmt.Errorf("--slot cannot be combined with --all or --include-leased; name the exact path instead")
+		}
+		path, err := resolveCurrentSlot(destroySlot)
+		if err != nil {
+			return err
+		}
+		args = []string{path}
+	}
 	if destroyIncludeLeased && destroyAll {
 		return errors.New("--include-leased cannot be combined with --all; name the exact worktree path instead (leased worktrees are never removed in bulk)")
 	}

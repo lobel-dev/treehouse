@@ -16,11 +16,15 @@ import (
 )
 
 var enterCmd = &cobra.Command{
-	Use:   "enter <name|pool/name>",
+	Use:   "enter <name|pool/name> | enter --branch <branch>",
 	Short: "Open a subshell in an existing worktree by name, even if in use",
 	Long: `Open a subshell in an existing pool worktree identified by its name
 (the number shown by 'treehouse status'), including worktrees that are
 already in use.
+
+Pass --branch <branch> to find the unique current-pool Git slot actually
+holding that literal branch. Historical matches are not used. This opens a
+writable shell, just like positional enter; use work to resume a parked branch.
 
 From any directory, use the pool/name selector shown by
 'treehouse status --all'. Qualified selectors use the user-level root
@@ -33,18 +37,38 @@ exit. Use it to attach to a worktree another agent is already using.
 Pass --print-path to print only the worktree's absolute path to stdout
 instead of opening a subshell. A shell can wrap this to change its own
 directory, e.g. 'cd "$(treehouse enter --print-path 1)"'.`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("branch") {
+			if len(args) > 0 {
+				return fmt.Errorf("--branch and positional targets are mutually exclusive")
+			}
+			if enterBranch == "" {
+				return fmt.Errorf("--branch cannot be empty")
+			}
+			return nil
+		}
+		return cobra.ExactArgs(1)(cmd, args)
+	},
 	RunE: enterRunE,
 }
 
 var enterPrintPath bool
+var enterBranch string
 
 func init() {
 	enterCmd.Flags().BoolVar(&enterPrintPath, "print-path", false, "Print the worktree's absolute path to stdout instead of opening a subshell")
+	enterCmd.Flags().StringVar(&enterBranch, "branch", "", "Open the unique current-pool slot actually holding this Git branch")
 	rootCmd.AddCommand(enterCmd)
 }
 
 func enterRunE(cmd *cobra.Command, args []string) error {
+	if cmd.Flags().Changed("branch") {
+		target, err := resolveCurrentBranchSlot(enterBranch)
+		if err != nil {
+			return err
+		}
+		return enterWorktree(target)
+	}
 	name := args[0]
 
 	var worktrees []pool.WorktreeStatus
@@ -119,6 +143,10 @@ func enterRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no worktree named %q in pool (available: %s). Run 'treehouse status' for details", name, strings.Join(names, ", "))
 	}
 
+	return enterWorktree(target)
+}
+
+func enterWorktree(target *pool.WorktreeStatus) error {
 	if enterPrintPath {
 		// Only the absolute path goes to stdout so callers can capture it with
 		// command substitution, e.g. cd "$(treehouse enter --print-path 1)".
