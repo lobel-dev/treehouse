@@ -471,12 +471,18 @@ func TestDashboardFooterAlwaysPresent(t *testing.T) {
 			if !strings.Contains(plain, "quit") {
 				t.Fatalf("%s %dx%d missing quit: %q", state.name, size.w, size.h, plain)
 			}
-			if strings.Contains(plain, "Enter") || strings.Contains(plain, "Esc") {
+			key, label := m.enterVerb()
+			if m.loading && !m.pageReady() {
+				if (key != "n" && key != "q") || !strings.Contains(plain, label) {
+					t.Fatalf("%s %dx%d missing loading footer %q: %q", state.name, size.w, size.h, label, plain)
+				}
 				continue
 			}
-			key, label := m.enterVerb()
-			if (key != "n" && key != "q") || !strings.Contains(plain, label) {
-				t.Fatalf("%s %dx%d missing Enter or Esc: %q", state.name, size.w, size.h, plain)
+			if !strings.Contains(plain, key) {
+				t.Fatalf("%s %dx%d missing key %q: %q", state.name, size.w, size.h, key, plain)
+			}
+			if !strings.Contains(plain, label) {
+				t.Fatalf("%s %dx%d missing label %q: %q", state.name, size.w, size.h, label, plain)
 			}
 		}
 	}
