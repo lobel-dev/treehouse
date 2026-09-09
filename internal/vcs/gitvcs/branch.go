@@ -105,6 +105,9 @@ func verifiedSlotGit(repo, path string) (gitRunner, error) {
 	return run, nil
 }
 
+// VerifySlotRepository authenticates path's linked-worktree Git marker and
+// backlink, then verifies that its common Git directory has the same filesystem
+// identity as repo's. It does not change either repository or worktree.
 func VerifySlotRepository(repo, path string) error {
 	_, err := verifiedSlotGit(repo, path)
 	return err

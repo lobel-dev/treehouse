@@ -613,6 +613,8 @@ func InspectGitBase(path, branch, expectedHead string) (atBase, merged, known bo
 
 type GitBranchState = gitvcs.BranchState
 
+// VerifyGitSlotRepository requires a Git-marked slot at path and verifies that
+// its common Git directory has the same filesystem identity as repo's, read-only.
 func VerifyGitSlotRepository(repo, path string) error {
 	if WorktreeBackendName(path) != "git" {
 		return fmt.Errorf("target %s is not a Git slot", path)
