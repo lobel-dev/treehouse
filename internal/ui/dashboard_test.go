@@ -448,12 +448,14 @@ func TestDashboardFooterAlwaysPresent(t *testing.T) {
 	}{
 		{"home", func(*dashboard) {}},
 		{"trees", func(m *dashboard) { m.page = TreesPage; m.cache[TreesPage] = m.snapshot }},
-		{"cleanup", func(m *dashboard) {
+		{"cleanup", func(m *dashboard) { m.page = CleanupPage; m.cache[CleanupPage] = m.snapshot }},
+		{"cleanup-remove", func(m *dashboard) {
 			m.page = CleanupPage
 			m.snapshot.CandidatePaths = []string{"/only/displayed"}
 			m.cache[CleanupPage] = m.snapshot
 		}},
-		{"loading", func(m *dashboard) { m.loading = true }},
+		{"loading", func(m *dashboard) { m.loading = true; delete(m.cache, HomePage) }},
+		{"empty", func(m *dashboard) { m.snapshot.Rows = nil; m.cache[HomePage] = m.snapshot }},
 		{"help", func(m *dashboard) { m.help = true }},
 	}
 	for _, size := range []struct{ h, w int }{{24, 80}, {20, 32}} {
@@ -465,8 +467,16 @@ func TestDashboardFooterAlwaysPresent(t *testing.T) {
 			if lipgloss.Height(view) != m.height {
 				t.Fatalf("%s %dx%d height %d", state.name, size.w, size.h, lipgloss.Height(view))
 			}
-			if !strings.Contains(view, "Enter") || !strings.Contains(view, "quit") {
-				t.Fatalf("%s %dx%d missing footer", state.name, size.w, size.h)
+			plain := ansi.Strip(view)
+			if !strings.Contains(plain, "quit") {
+				t.Fatalf("%s %dx%d missing quit: %q", state.name, size.w, size.h, plain)
+			}
+			if strings.Contains(plain, "Enter") || strings.Contains(plain, "Esc") {
+				continue
+			}
+			key, label := m.enterVerb()
+			if (key != "n" && key != "q") || !strings.Contains(plain, label) {
+				t.Fatalf("%s %dx%d missing Enter or Esc: %q", state.name, size.w, size.h, plain)
 			}
 		}
 	}
