@@ -55,7 +55,7 @@ def send(text):
 
 try:
     if mode == "home":
-        expect("n new branch")
+        expect("start a branch")
         assert b"treehouse" in transcript
         assert b"Working on" not in transcript
         send("n")
@@ -64,6 +64,7 @@ try:
         expect("invalid literal branch")
         send("\x01\x0bfeature/terminal\r")
         expect("Type 'exit' to return.")
+        assert transcript.find(b"\x1b[?1049l") < transcript.find(b"Type 'exit' to return.")
         send("printf 'SHELL_READY\\n'\n")
         expect("SHELL_READY")
         send("exit\n")
@@ -71,7 +72,7 @@ try:
         expect("Choose a number: ")
         send("q\n")
     elif mode == "browse":
-        expect("(current)")
+        expect("feature/terminal")
         capture("trees")
         send("/does-not-exist")
         expect("No matches")
@@ -79,9 +80,10 @@ try:
         time.sleep(0.1)
         send("q")
     elif mode == "open":
-        expect("(current)")
+        expect("feature/terminal")
         send("\r")
         expect("Entered worktree 1")
+        assert transcript.find(b"\x1b[?1049l") < transcript.find(b"Type 'exit' to leave.")
         send("printf 'OPEN_READY\\n'\n")
         expect("OPEN_READY")
         send("exit\n")
@@ -90,11 +92,9 @@ try:
         assert b"remote-only" not in transcript, "remote-only ref offered as local work"
         send("q")
     elif mode == "empty":
-        expect("No available branches")
+        expect("No branches")
         send("t")
-        # Inline redraws keep leftover "No " from the home empty state, so the
-        # byte stream never contains the contiguous phrase "No trees yet".
-        expect("Start work from home")
+        expect("Press n on home")
         capture("empty")
         send("q")
     elif mode == "resume":
@@ -102,15 +102,17 @@ try:
         capture("branches")
         send("\r")
         expect("Type 'exit' to return.")
+        assert transcript.find(b"\x1b[?1049l") < transcript.find(b"Type 'exit' to return.")
         send("printf 'RESUME_READY\\n'\n")
         expect("RESUME_READY")
         send("exit\n")
     else:
-        expect("Remove the listed trees?")
+        expect("removable")
         capture("cleanup")
-        send("\t\r" if mode == "confirm" else "\r")
-        expect("Removed" if mode == "confirm" else "Canceled")
-        send("q")
+        send("\r" if mode == "confirm" else "\x1b")
+        if mode == "confirm":
+            expect("Removed")
+            assert transcript.find(b"\x1b[?1049l") < transcript.find(b"Removed")
     deadline = time.monotonic() + 20
     while True:
         done, status = os.waitpid(pid, os.WNOHANG)
@@ -131,8 +133,11 @@ finally:
             os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
-    if mode != "dumb" and reaped:
-        assert b"\x1b[?1049h" not in transcript, "inline workspace entered the alternate screen"
+    if mode == "dumb":
+        assert b"\x1b[?1049h" not in transcript, "dumb terminal entered the alternate screen"
+    elif reaped:
+        assert b"\x1b[?1049h" in transcript, "workspace did not enter the alternate screen"
+        assert b"\x1b[?1049l" in transcript, "workspace did not leave the alternate screen"
         assert b"\x1b[?25h" in transcript, "cursor not restored"
         settings = termios.tcgetattr(terminal)
         assert settings[3] & termios.ICANON, "terminal left in raw mode"

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -49,10 +50,86 @@ func runWorkspace(page ui.Page) error {
 			if err == nil {
 				result, err = run(pool.PruneOptions{CandidatePaths: action.Paths, PruneOrphans: pruneOrphans, PreDestroy: cfg.Hooks.PreDestroy})
 			}
-			// A result is shown before returning home. No input reader survives into
-			// hooks or mutation; the engine revalidates the exact displayed paths.
-			options.Result = cleanupResultText(result, len(action.Paths), err)
+			// No input reader survives into hooks or mutation; the engine
+			// revalidates the exact displayed paths.
+			text, runErr, done := applyWorkspaceCleanup(&options, result, len(action.Paths), err)
+			if text != "" {
+				fmt.Fprint(os.Stderr, text)
+				if !strings.HasSuffix(text, "\n") {
+					fmt.Fprintln(os.Stderr)
+				}
+			}
+			if done {
+				return runErr
+			}
 		}
+	}
+}
+
+func applyWorkspaceCleanup(options *ui.DashboardOptions, result pool.PruneResult, requested int, runErr error) (stderr string, err error, done bool) {
+	text := cleanupResultText(result, requested, runErr)
+	if options.Page != ui.HomePage {
+		if runErr != nil {
+			return "", fmt.Errorf("%s", strings.TrimSpace(text)), true
+		}
+		return text, nil, true
+	}
+	options.Banner = firstLine(text)
+	options.BannerWarning = runErr != nil
+	options.Page = ui.HomePage
+	return text, nil, false
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return s
+}
+
+func workspaceTreeTitle(slot pool.WorktreeStatus) (title, extra string) {
+	if slot.Flavor == "git" {
+		facts := vcs.InspectGitWorktree(slot.Path)
+		if facts.Branch != "" {
+			return facts.Branch, "(current)"
+		}
+		if slot.LastBranch != "" {
+			return slot.LastBranch, "(last used)"
+		}
+		if facts.IdentityKnown {
+			return "No branch checked out", ""
+		}
+		return "Branch unavailable", ""
+	}
+	if slot.LastBranch != "" {
+		return slot.LastBranch, "(last used)"
+	}
+	return slot.Name, ""
+}
+
+func workspaceTreeRow(slot pool.WorktreeStatus) ui.DashboardRow {
+	title, extra := workspaceTreeTitle(slot)
+	var b strings.Builder
+	if extra != "" {
+		b.WriteString(extra + "\n")
+	}
+	fmt.Fprintf(&b, "tree %s · %s\n", slot.Name, slot.Status)
+	b.WriteString(ui.PrettyPath(slot.Path) + "\n")
+	if slot.LeaseHolder != "" {
+		b.WriteString("leased by " + slot.LeaseHolder + "\n")
+	}
+	for _, p := range slot.Processes {
+		b.WriteString(p.String() + "\n")
+	}
+	b.WriteString("Enter opens this tree; files stay as you leave them.")
+	return ui.DashboardRow{
+		ID:         slot.Path,
+		Title:      title,
+		Annotation: "tree " + slot.Name,
+		Status:     slot.Status,
+		Details:    b.String(),
+		Action:     ui.Action{Kind: ui.OpenTree, Target: slot.Path, Name: slot.Name},
 	}
 }
 
@@ -77,29 +154,7 @@ func workspaceSnapshot(repo string, page ui.Page, jj bool) (ui.DashboardSnapshot
 	s := ui.DashboardSnapshot{Summary: fmt.Sprintf("%d %s · %d available · %d leased", len(slots), treeWord, available, leased)}
 	treeRows := make(map[string]ui.DashboardRow, len(slots))
 	for _, slot := range slots {
-		branch := "Branch unavailable"
-		if slot.Flavor == "git" {
-			facts := vcs.InspectGitWorktree(slot.Path)
-			if facts.IdentityKnown {
-				branch = "No branch checked out"
-			}
-			if facts.Branch != "" {
-				branch = facts.Branch + " (current)"
-			} else if slot.LastBranch != "" {
-				branch = slot.LastBranch + " (last used)"
-			}
-		} else if slot.Flavor == "jj" {
-			branch = "jj workspace"
-		}
-		details := fmt.Sprintf("%s\nTree %s · %s · %s\nPath: %s\n", branch, slot.Name, slot.Status, slot.Flavor, ui.PrettyPath(slot.Path))
-		if slot.LeaseHolder != "" {
-			details += "Lease holder: " + slot.LeaseHolder + "\n"
-		}
-		for _, p := range slot.Processes {
-			details += "Process: " + p.String() + "\n"
-		}
-		details += "Enter opens this tree; files stay as you leave them."
-		row := ui.DashboardRow{ID: slot.Path, Label: branch + " · tree " + slot.Name, Status: slot.Status, Details: details, Action: ui.Action{Kind: ui.OpenTree, Target: slot.Path, Name: slot.Name}}
+		row := workspaceTreeRow(slot)
 		treeRows[slot.Path] = row
 		if page == ui.TreesPage || jj {
 			s.Rows = append(s.Rows, row)
@@ -113,16 +168,17 @@ func workspaceSnapshot(repo string, page ui.Page, jj bool) (ui.DashboardSnapshot
 		return s, err
 	}
 	for _, branch := range branches {
-		label, eligible := workBranchLabel(branch, slots)
+		_, eligible := workBranchLabel(branch, slots)
 		if !eligible {
 			continue
 		}
-		details := branch.Name + "\nNo tree assigned. One will be prepared when you open this branch."
+		details := "No tree assigned. One will be prepared when you open this branch.\nEnter resumes this branch. Unfinished changes stay on exit."
 		status := "ready"
+		annotation := ""
 		if len(branch.Holders) == 0 {
 			for _, slot := range slots {
 				if slot.LastBranch == branch.Name {
-					details = branch.Name + "\nLast used in tree " + slot.Name + " (history only)\nPath: " + slot.Path + "\nEnter resumes the branch in an available tree."
+					details = "Last used in tree " + slot.Name + " (history only)\nPath: " + ui.PrettyPath(slot.Path) + "\nEnter resumes the branch in an available tree."
 					break
 				}
 			}
@@ -130,14 +186,26 @@ func workspaceSnapshot(repo string, page ui.Page, jj bool) (ui.DashboardSnapshot
 		for _, holder := range branch.Holders {
 			for _, slot := range slots {
 				if sameMenuPath(slot.Path, holder.Path) {
-					details = strings.ReplaceAll(treeRows[slot.Path].Details, "Enter opens this tree; files stay as you leave them.", "Enter resumes work; unfinished changes are kept by default on exit.")
+					details = strings.ReplaceAll(treeRows[slot.Path].Details, "Enter opens this tree; files stay as you leave them.", "Enter resumes this branch. Unfinished changes stay on exit.")
 					status = slot.Status
+					annotation = "tree " + slot.Name
 				}
 			}
 		}
-		s.Rows = append(s.Rows, ui.DashboardRow{ID: branch.Name, Label: label, Status: status, Details: details, Action: ui.Action{Kind: ui.ResumeBranch, Target: branch.Name}})
+		s.Rows = append(s.Rows, ui.DashboardRow{ID: branch.Name, Title: branch.Name, Annotation: annotation, Status: status, Details: details, Action: ui.Action{Kind: ui.ResumeBranch, Target: branch.Name}})
 	}
 	return s, nil
+}
+
+func workspaceCleanupTitle(tree pool.PruneWorktree) string {
+	label := pruneBranchLabel(tree)
+	if label == "jj workspace" {
+		if tree.LastBranch != "" {
+			return tree.LastBranch
+		}
+		return tree.Name
+	}
+	return label
 }
 
 func workspaceCleanupSnapshot() (ui.DashboardSnapshot, error) {
@@ -158,11 +226,11 @@ func workspaceCleanupSnapshot() (ui.DashboardSnapshot, error) {
 				s.Notice = "WARNING: orphan contents could not be verified.\n" + s.Notice
 			}
 		}
-		s.Rows = append(s.Rows, ui.DashboardRow{ID: tree.Path, Label: "Tree " + tree.Name + " · " + pruneBranchLabel(tree), Status: "removable", Details: strings.TrimSpace(pruneBranchLabel(tree) + "\n" + ui.PrettyPath(tree.Path) + "\n" + formatBytes(tree.Bytes) + "\n" + warning)})
+		s.Rows = append(s.Rows, ui.DashboardRow{ID: tree.Path, Title: workspaceCleanupTitle(tree), Annotation: "tree " + tree.Name, Status: "removable", Details: strings.TrimSpace(ui.PrettyPath(tree.Path) + "\n" + formatBytes(tree.Bytes) + "\n" + warning)})
 		s.CandidatePaths = append(s.CandidatePaths, tree.Path)
 	}
 	for _, skip := range result.Skipped {
-		s.Rows = append(s.Rows, ui.DashboardRow{ID: skip.Path, Label: "Tree " + skip.Name, Status: "protected", Details: ui.PrettyPath(skip.Path) + "\nKeeping: " + skip.Reason})
+		s.Rows = append(s.Rows, ui.DashboardRow{ID: skip.Path, Title: skip.Name, Annotation: "tree " + skip.Name, Status: "protected", Details: ui.PrettyPath(skip.Path) + "\nKeeping: " + skip.Reason})
 	}
 	return s, nil
 }

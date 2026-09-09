@@ -16,7 +16,10 @@ func dashboardText(s string) string {
 		if r == '\n' {
 			return r
 		}
-		if unicode.IsControl(r) {
+		if r == '\u2028' || r == '\u2029' {
+			return '\n'
+		}
+		if unicode.Is(unicode.Cf, r) || unicode.IsControl(r) {
 			return -1
 		}
 		return r
@@ -27,13 +30,21 @@ func sanitizeField(s string) string {
 	return strings.ReplaceAll(dashboardText(s), "\n", "")
 }
 
-type workspacePalette struct{ text, muted, accent, selected, warning string }
+type workspacePalette struct {
+	text, muted, accent, selected, warning, leased, inuse, border string
+}
 
 func (m *dashboard) palette() workspacePalette {
 	if m.dark {
-		return workspacePalette{"#E4E7EB", "#909AA8", "#70D6AD", "#203C35", "#F0BE78"}
+		return workspacePalette{
+			text: "#E4E7EB", muted: "#909AA8", accent: "#70D6AD", selected: "#203C35",
+			warning: "#F0BE78", leased: "#B6A5F5", inuse: "#83BDF0", border: "#4A8E75",
+		}
 	}
-	return workspacePalette{"#222D38", "#586676", "#087D61", "#D9F0E6", "#976017"}
+	return workspacePalette{
+		text: "#222D38", muted: "#586676", accent: "#087D61", selected: "#D9F0E6",
+		warning: "#976017", leased: "#7253B3", inuse: "#2167A1", border: "#5A9A82",
+	}
 }
 func (m *dashboard) ink(s, color string, bold bool) string {
 	if m.monochrome {
@@ -46,237 +57,656 @@ func (m *dashboard) primary(s string) string { return m.ink(s, m.palette().accen
 func clip(s string, width int) string        { return ansi.Truncate(s, max(1, width), "…") }
 func wrapped(s string, width int) string     { return ansi.Wrap(s, max(1, width), "") }
 func window(s string, width, height, offset int) string {
+	if height <= 0 {
+		return ""
+	}
 	lines := strings.Split(wrapped(s, width), "\n")
 	start := min(offset, max(0, len(lines)-1))
 	return strings.Join(lines[start:min(len(lines), start+max(1, height))], "\n")
 }
-func (m *dashboard) footer(width int) string {
-	primary, secondary := "Enter resume  / search  n new branch", "j/k move  t trees  c cleanup  r refresh  ? help  q quit"
-	if m.options.JJ {
-		primary = "Enter open  / search  n start tree"
+
+func blockHeight(s string) int {
+	if s == "" {
+		return 0
 	}
-	if m.page == TreesPage {
-		primary = "Enter open  / search  Esc back"
-		secondary = "j/k move  r refresh  ? help  q quit"
+	return lipgloss.Height(s)
+}
+
+func padBlock(s string, width, height int) string {
+	if height <= 0 {
+		return ""
 	}
-	if m.page == CleanupPage {
-		primary = "Tab choose  Enter confirm  Esc back"
-		secondary = "j/k inspect  r refresh  ? help  q quit"
+	if s == "" {
+		return strings.Join(make([]string, height), "\n")
 	}
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = clip(lines[i], width)
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func fitBlock(s string, width, height int) string {
+	return padBlock(s, width, height)
+}
+
+func joinBlocks(blocks ...string) string {
+	var parts []string
+	for _, b := range blocks {
+		if b != "" {
+			parts = append(parts, b)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func oneLine(s string, width int) string {
+	s = dashboardText(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	return clip(strings.TrimSpace(s), width)
+}
+
+func (m *dashboard) contentWidth() int { return max(1, m.width-2) }
+
+func (m *dashboard) brand() string {
+	if !m.monochrome && lipgloss.Width("🌳") == 2 {
+		return "🌳 treehouse"
+	}
+	return "treehouse"
+}
+
+func (m *dashboard) headerBar(width int) string {
+	brand := m.primary(m.brand())
+	repo := m.ink(dashboardText(m.options.Repository), m.palette().text, true)
+	left := brand + m.hint("  ·  ") + repo
+	summary := dashboardText(m.visible().Summary)
+	if m.creating || m.help {
+		summary = ""
+	}
+	if summary != "" && width >= 68 {
+		gap := width - lipgloss.Width(ansi.Strip(left)) - lipgloss.Width(summary)
+		if gap >= 3 {
+			left += strings.Repeat(" ", gap) + m.hint(summary)
+		}
+	}
+	return wrapped(left, width)
+}
+
+type bannerKind int
+
+const (
+	bannerNone bannerKind = iota
+	bannerSearch
+	bannerOrphan
+	bannerUser
+	bannerRefreshing
+	bannerError
+)
+
+func orphanWarning(notice string) string {
+	notice = dashboardText(notice)
+	if !strings.HasPrefix(notice, "WARNING:") {
+		return ""
+	}
+	line, _, _ := strings.Cut(notice, "\n")
+	return strings.TrimSpace(line)
+}
+
+func (m *dashboard) currentBanner(dropUser, dropOrphan bool) bannerKind {
 	if m.searching {
-		primary = "Type to filter  Enter open  Esc clear"
-		secondary = "Up/Down select  Ctrl+C quit"
+		return bannerSearch
 	}
-	if m.creating {
-		primary = "Enter create branch  Esc back"
-		secondary = ""
+	if !dropOrphan && m.page == CleanupPage && !m.creating && !m.help {
+		if orphanWarning(m.visible().Notice) != "" {
+			return bannerOrphan
+		}
 	}
-	if m.page == ResultPage {
-		primary = "Enter continue  q quit"
-		secondary = "PgUp/PgDn scroll"
+	if dropUser {
+		return bannerNone
 	}
-	if m.help {
-		primary = "? or Esc close help  Ctrl+C quit"
-		secondary = "PgUp/PgDn scroll"
+	if m.options.Banner != "" && !m.creating && !m.help {
+		return bannerUser
 	}
-	result := wrapped(m.shortcuts(primary), width)
-	if secondary != "" {
-		result += "\n" + m.hint(wrapped(secondary, width))
+	if m.loading && !m.creating && !m.help {
+		if _, ok := m.cache[m.page]; ok {
+			return bannerRefreshing
+		}
 	}
-	return result
+	if m.err != "" && !m.creating && !m.help {
+		return bannerError
+	}
+	return bannerNone
 }
-func (m *dashboard) shortcuts(s string) string {
-	var groups []string
-	for _, part := range strings.Split(s, "  ") {
-		key, label, _ := strings.Cut(part, " ")
-		groups = append(groups, m.primary(key)+" "+m.hint(label))
+
+func (m *dashboard) bannerLine(width int, kind bannerKind) string {
+	p := m.palette()
+	switch kind {
+	case bannerSearch:
+		return clip(m.hint("Find: ")+m.input.View(), width)
+	case bannerOrphan:
+		return m.ink(oneLine(orphanWarning(m.visible().Notice), width), p.warning, false)
+	case bannerUser:
+		line := oneLine(m.options.Banner, width)
+		if m.options.BannerWarning {
+			return m.ink(line, p.warning, false)
+		}
+		return m.hint(line)
+	case bannerRefreshing:
+		return m.hint(clip("Refreshing…", width))
+	case bannerError:
+		return m.ink(oneLine(m.err, width), p.warning, false)
+	default:
+		return ""
 	}
-	return strings.Join(groups, "  ")
 }
+
+func (m *dashboard) statusLabel(status string) string {
+	status = dashboardText(status)
+	if status == "in-use" {
+		return "in use"
+	}
+	return status
+}
+
 func (m *dashboard) statusColor(status string) string {
-	switch status {
+	switch m.statusLabel(status) {
 	case "dirty", "protected":
 		return m.palette().warning
 	case "leased":
-		if m.dark {
-			return "#B6A5F5"
-		}
-		return "#7253B3"
+		return m.palette().leased
 	case "in use":
-		if m.dark {
-			return "#83BDF0"
-		}
-		return "#2167A1"
+		return m.palette().inuse
 	default:
 		return m.palette().accent
 	}
 }
+
+func (m *dashboard) pill(status string) string {
+	label := m.statusLabel(status)
+	if label == "" {
+		return ""
+	}
+	if m.monochrome {
+		return "[" + label + "]"
+	}
+	return m.ink(label, m.statusColor(status), false)
+}
+
 func (m *dashboard) row(r DashboardRow, width int, selected bool) string {
-	badge := "[" + dashboardText(r.Status) + "]"
-	labelWidth := max(1, width-lipgloss.Width(badge)-4)
-	label := clip(strings.ReplaceAll(dashboardText(r.Label), "\n", " "), labelWidth)
+	annotation := strings.ReplaceAll(dashboardText(r.Annotation), "\n", " ")
+	title := strings.ReplaceAll(dashboardText(r.Title), "\n", " ")
 	prefix := "  "
 	if selected {
 		prefix = "> "
 	}
-	line := prefix + label + strings.Repeat(" ", max(1, width-2-lipgloss.Width(label)-lipgloss.Width(badge))) + badge
-	line = clip(line, width)
+	rightPlain := m.statusLabel(r.Status)
 	if m.monochrome {
-		return line
+		rightPlain = m.pill(r.Status)
 	}
-	p := m.palette()
-	gap := strings.Repeat(" ", max(1, width-2-lipgloss.Width(label)-lipgloss.Width(badge)))
-	styled := m.ink(prefix+label, p.text, selected) + gap + m.ink(badge, m.statusColor(r.Status), false)
-	if selected {
-		return lipgloss.NewStyle().Background(lipgloss.Color(p.selected)).Foreground(lipgloss.Color(p.text)).Bold(true).Render(line)
+	if annotation != "" {
+		if rightPlain != "" {
+			rightPlain = annotation + "  " + rightPlain
+		} else {
+			rightPlain = annotation
+		}
 	}
-	return clip(styled, width)
+	titleWidth := max(1, width-lipgloss.Width(prefix)-lipgloss.Width(rightPlain)-1)
+	title = clip(title, titleWidth)
+	gap := max(1, width-lipgloss.Width(prefix)-lipgloss.Width(title)-lipgloss.Width(rightPlain))
+	plain := clip(prefix+title+strings.Repeat(" ", gap)+rightPlain, width)
+	if selected && !m.monochrome {
+		return lipgloss.NewStyle().Background(lipgloss.Color(m.palette().selected)).Foreground(lipgloss.Color(m.palette().text)).Bold(true).Render(plain)
+	}
+	if m.monochrome {
+		return plain
+	}
+	right := m.pill(r.Status)
+	if annotation != "" && right != "" {
+		right = m.hint(annotation) + "  " + right
+	} else if annotation != "" {
+		right = m.hint(annotation)
+	}
+	return clip(m.ink(prefix+title, m.palette().text, false)+strings.Repeat(" ", gap)+right, width)
 }
-func (m *dashboard) details(row DashboardRow, width, height int) string {
+
+func (m *dashboard) detailsText(row DashboardRow) string {
 	details := dashboardText(row.Details)
+	title := dashboardText(row.Title)
+	target := dashboardText(row.Action.Target)
 	lines := strings.Split(details, "\n")
-	// The selected row already supplies its name; preserve it in the details
-	// when the row had to truncate it.
-	if len(lines) > 1 && (lines[0] == row.Action.Target || lines[0] == row.Label) && lipgloss.Width(row.Label) < width-18 {
-		details = strings.Join(lines[1:], "\n")
+	for len(lines) > 0 && (lines[0] == "" || lines[0] == title || lines[0] == target) {
+		lines = lines[1:]
 	}
-	text := window(details, width-4, height, m.detailOffset)
-	var rendered []string
-	for _, line := range strings.Split(text, "\n") {
-		rendered = append(rendered, m.hint("  │ "+line))
-	}
-	return strings.Join(rendered, "\n")
+	return strings.Join(lines, "\n")
 }
-func (m *dashboard) list(width, budget int) string {
-	rows := m.rows()
+
+func (m *dashboard) listBody(width, height int) string {
+	if height <= 0 {
+		return ""
+	}
 	if m.loading {
-		return m.hint("Loading...")
+		if _, ok := m.cache[m.page]; !ok {
+			return padBlock(m.hint("Loading…"), width, height)
+		}
 	}
-	if m.err != "" {
-		return m.ink(window("Could not load workspace.\n"+dashboardText(m.err)+"\nPress r to retry.", width, budget, 0), m.palette().warning, false)
+	if _, ok := m.cache[m.page]; !ok && m.err != "" && !m.loading {
+		return padBlock(m.hint(window("Could not load. Press r to retry.", width, height, 0)), width, height)
 	}
+	rows := m.rows()
 	if len(rows) == 0 {
-		message := "No available branches.\nPress n to start work, or t to browse trees."
+		message := "No branches. Press n to start one."
+		if m.options.JJ && m.page == HomePage {
+			message = "No trees. Press n to start one."
+		}
 		if m.page == TreesPage {
-			message = "No trees yet.\nStart work from home to create one."
+			message = "No trees. Press n on home to create one."
 		}
 		if m.page == CleanupPage {
 			message = "Nothing to clean up. Your work is kept."
 		}
 		if m.searching && m.input.Value() != "" {
-			message = "No matches.\nEscape clears search."
+			message = "No matches. Esc clears find."
 		}
-		return m.hint(window(message, width, budget, 0))
+		return padBlock(m.hint(window(message, width, height, 0)), width, height)
 	}
 	selected := min(m.selected, len(rows)-1)
-	detailHeight := min(5, max(0, budget-3))
-	details := m.details(rows[selected], width, detailHeight)
-	if detailHeight == 0 {
-		details = ""
-	} else {
-		detailHeight = lipgloss.Height(details)
-	}
-	rowLimit := min(8, max(1, budget-detailHeight-1))
-	start := max(0, selected-rowLimit+1)
-	end := min(len(rows), start+rowLimit)
+	start := max(0, selected-height+1)
+	end := min(len(rows), start+height)
 	var lines []string
 	for i := start; i < end; i++ {
 		lines = append(lines, m.row(rows[i], width, i == selected))
-		if i == selected && details != "" {
-			lines = append(lines, details)
-		}
 	}
-	if len(rows) > rowLimit {
-		lines = append(lines, m.hint(fmt.Sprintf("  %d–%d of %d · j/k to scroll", start+1, end, len(rows))))
-	}
-	return strings.Join(lines, "\n")
+	return padBlock(strings.Join(lines, "\n"), width, height)
 }
-func (m *dashboard) View() tea.View {
-	width := max(1, min(96, m.width-2))
-	title := m.primary("treehouse") + m.hint(" / ") + m.ink(dashboardText(m.options.Repository), m.palette().text, true)
-	if m.exiting {
-		message := "Closed."
-		switch m.action.Kind {
-		case ResumeBranch, CreateBranch:
-			message = "Opening " + dashboardText(m.action.Target) + "…"
-		case OpenTree:
-			message = "Opening tree " + dashboardText(m.action.Name) + "…"
-		case StartTree:
-			message = "Starting a tree…"
-		case RemoveTrees:
-			message = "Cleaning up selected trees…"
+
+func (m *dashboard) detailsBody(width, height int) string {
+	if height <= 0 {
+		return ""
+	}
+	rows := m.rows()
+	if len(rows) == 0 {
+		return padBlock("", width, height)
+	}
+	selected := min(m.selected, len(rows)-1)
+	text := window(m.detailsText(rows[selected]), width, height, m.detailOffset)
+	return padBlock(m.hint(text), width, height)
+}
+
+func (m *dashboard) hairline(title string, width int) string {
+	prefix := "─ " + title + " "
+	rest := max(0, width-lipgloss.Width(prefix))
+	return m.hint(clip(prefix+strings.Repeat("─", rest), width))
+}
+
+func (m *dashboard) panel(title, body string, width, height, chrome int) string {
+	if height <= 0 || width <= 0 {
+		return ""
+	}
+	innerW, bodyH := width, height
+	if chrome == 3 {
+		innerW = max(1, width-2)
+		bodyH = max(0, height-3)
+	} else if chrome == 1 {
+		bodyH = max(0, height-1)
+	}
+	body = padBlock(body, innerW, bodyH)
+	switch chrome {
+	case 3:
+		inner := clip(m.hint(title), innerW)
+		if bodyH > 0 {
+			inner += "\n" + body
 		}
-		return tea.NewView(" " + clip(title+"  "+m.hint(message), width))
+		b := lipgloss.RoundedBorder()
+		if m.monochrome {
+			b = lipgloss.NormalBorder()
+		}
+		style := lipgloss.NewStyle().Border(b).Width(width).Height(height)
+		if !m.monochrome {
+			style = style.BorderForeground(lipgloss.Color(m.palette().border))
+		}
+		return fitBlock(style.Render(inner), width, height)
+	case 1:
+		block := m.hairline(title, width)
+		if bodyH > 0 {
+			block += "\n" + body
+		}
+		return fitBlock(block, width, height)
+	default:
+		return fitBlock(body, width, height)
 	}
-	header := clip(title, width)
-	section := "LOCAL BRANCHES"
-	if m.options.JJ {
-		section = "WORKSPACES"
-	}
-	if m.page == TreesPage {
-		section = "TREES"
+}
+
+func (m *dashboard) listTitle() string {
+	n := len(m.rows())
+	name := "Branches"
+	if m.page == TreesPage || (m.page == HomePage && m.options.JJ) {
+		name = "Trees"
 	}
 	if m.page == CleanupPage {
-		section = "CLEANUP"
+		name = "Cleanup"
 	}
+	if m.creating || m.help {
+		return name
+	}
+	return fmt.Sprintf("%s  %d", name, n)
+}
+
+func (m *dashboard) overlayTitle() string {
 	if m.creating {
-		section = "NEW BRANCH"
+		return "New branch"
 	}
-	if m.page == ResultPage {
-		section = "CLEANUP RESULT"
-	}
-	if m.help {
-		section = "KEYBOARD SHORTCUTS"
-	}
-	summary := dashboardText(m.snapshot.Summary)
-	if !m.creating && !m.help && m.page != ResultPage {
-		section += fmt.Sprintf("  %d", len(m.rows()))
-	}
-	subtitle := m.hint(section)
-	if summary != "" && width >= 68 && !m.creating && !m.help && m.page != ResultPage {
-		gap := width - lipgloss.Width(section) - lipgloss.Width(summary)
-		if gap >= 3 {
-			subtitle += strings.Repeat(" ", gap) + m.hint(summary)
-		}
-	}
-	header += "\n" + clip(subtitle, width)
-	footer := m.footer(width)
-	budget := max(1, m.height-lipgloss.Height(header)-lipgloss.Height(footer)-4)
-	body := ""
-	switch {
-	case m.creating:
-		body = "Branch name\n" + m.input.View() + "\n" + m.hint(strings.Repeat("─", min(48, width)))
+	return "Keys"
+}
+
+func (m *dashboard) overlayBody(width, height int) string {
+	if m.creating {
+		body := "Branch name\n" + m.input.View()
 		if m.validating {
 			body += "\n" + m.hint("Checking branch name...")
 		} else if m.err != "" {
 			body += "\n" + m.ink(dashboardText(m.err), m.palette().warning, false)
 		}
-	case m.help:
-		body = "Enter     Open the selected branch or tree\n/         Filter the list; Escape clears it\nj/k       Move selection (or use arrows)\nn         Create a branch; start a tree for jj\nt         Browse existing trees\nc         Preview cleanup; Cancel is the default\nr         Refresh the current list\nPgUp/Dn   Scroll selected details\nEsc       Go back or cancel\nq         Quit outside text entry\n\nExit the opened shell to return to your terminal."
-		body = m.hint(window(body, width, budget, m.detailOffset))
-	case m.page == ResultPage:
-		body = window(dashboardText(m.options.Result), width, budget, m.detailOffset)
-	default:
-		prefix := ""
-		if m.searching {
-			prefix = "Search: " + m.input.View() + "\n"
-		}
-		if m.page == CleanupPage {
-			choice := m.primary("> Cancel") + m.hint("     Remove listed trees")
-			if m.confirm {
-				choice = m.hint("  Cancel     ") + m.ink("> Remove listed trees", m.palette().warning, true)
+		return padBlock(body, width, height)
+	}
+	help := "Enter does the highlighted action.\nEsc goes back; q quits.\nn new branch; t trees; c cleanup.\nCleanup: Enter removes listed unused trees; Esc cancels.\n/ find; j/k move; PgUp/Dn scroll the Details panel."
+	return padBlock(m.hint(window(help, width, height, m.detailOffset)), width, height)
+}
+
+func (m *dashboard) selectedRow() (DashboardRow, bool) {
+	rows := m.rows()
+	if len(rows) == 0 {
+		return DashboardRow{}, false
+	}
+	return rows[min(m.selected, len(rows)-1)], true
+}
+
+func (m *dashboard) enterVerb() (key, label string) {
+	if m.help {
+		return "Esc", "close help"
+	}
+	if m.creating {
+		return "Enter", "create this branch"
+	}
+	if m.page == CleanupPage {
+		n := len(m.visible().CandidatePaths)
+		if n > 0 {
+			word := "tree"
+			if n != 1 {
+				word = "trees"
 			}
-			prefix = wrapped(dashboardText(m.snapshot.Notice), width) + "\n" + choice + "\n\n"
+			return "Enter", fmt.Sprintf("remove %d unused %s", n, word)
 		}
-		body = prefix + m.list(width, max(1, budget-lipgloss.Height(strings.TrimSuffix(prefix, "\n"))))
+		return "Esc", "back"
 	}
-	body = window(body, width, budget, 0)
-	content := header + "\n\n" + body + "\n\n" + footer
-	// Normal-screen rendering keeps the invoking command and terminal history.
-	// The widget grows with its content rather than stretching to terminal height.
-	frame := lipgloss.NewStyle().PaddingLeft(1)
-	if !m.monochrome {
-		frame = frame.Foreground(lipgloss.Color(m.palette().text))
+	row, ok := m.selectedRow()
+	if !ok {
+		if m.page == TreesPage {
+			if m.options.Page == HomePage {
+				return "Esc", "back"
+			}
+			return "q", "quit"
+		}
+		return "n", "start a branch"
 	}
-	return tea.NewView(frame.Render(content))
+	name := strings.ReplaceAll(dashboardText(row.Title), "\n", " ")
+	switch row.Action.Kind {
+	case OpenTree:
+		if row.Action.Name != "" {
+			name = "tree " + strings.ReplaceAll(dashboardText(row.Action.Name), "\n", " ")
+		} else if row.Annotation != "" {
+			name = strings.ReplaceAll(dashboardText(row.Annotation), "\n", " ")
+		}
+		return "Enter", "open " + name
+	default:
+		return "Enter", "resume " + name
+	}
+}
+
+func (m *dashboard) footer(width int) string {
+	key, label := m.enterVerb()
+	label = clip(label, max(8, width-lipgloss.Width(key)-2))
+	primary := m.primary(key) + "  " + m.hint(label)
+	if m.page == CleanupPage && len(m.visible().CandidatePaths) > 0 && !m.help && !m.creating {
+		primary = m.primary(key) + "  " + m.ink(label, m.palette().warning, false)
+	}
+	secondary := ""
+	note := ""
+	switch {
+	case m.help:
+		secondary = "Esc close  q quit"
+	case m.creating:
+		secondary = "Esc back"
+	case m.searching:
+		secondary = "Up/Down select  Esc clear  Ctrl+C quit"
+	case m.page == CleanupPage:
+		if len(m.visible().CandidatePaths) > 0 {
+			note = "Git branches are kept."
+			secondary = "Esc  cancel  q quit"
+		} else {
+			secondary = "Esc  back  q quit"
+		}
+	case m.page == TreesPage:
+		secondary = "/ find  ? help  q quit"
+	case m.options.JJ:
+		secondary = "n new  c cleanup  / find  ? help  q quit"
+	default:
+		secondary = "n new  t trees  c cleanup  / find  ? help  q quit"
+	}
+	result := wrapped(primary, width)
+	if note != "" {
+		result += "\n" + m.hint(wrapped(note, width))
+	}
+	if secondary != "" {
+		result += "\n" + m.hint(wrapped(m.shortcuts(secondary), width))
+	}
+	return result
+}
+
+func (m *dashboard) shortcuts(s string) string {
+	var groups []string
+	for _, part := range strings.Split(s, "  ") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, label, ok := strings.Cut(part, " ")
+		if !ok {
+			groups = append(groups, m.primary(key))
+			continue
+		}
+		groups = append(groups, m.primary(key)+" "+m.hint(label))
+	}
+	return strings.Join(groups, "  ")
+}
+
+type framePlan struct {
+	contentWidth                                          int
+	header, banner, list, details, overlay, footer, frame string
+	headerH, bannerH, listH, detailsH, overlayH, footerH  int
+	chrome                                                int
+	inputX, inputY                                        int
+	inputOnScreen                                         bool
+}
+
+func (m *dashboard) plan() framePlan {
+	cw := m.contentWidth()
+	p := framePlan{contentWidth: cw}
+	dropUser := false
+	dropOrphan := false
+	headerLimit := 0
+	footerLimit := 0
+	chrome := 1
+	if m.width >= 48 && m.height >= 16 {
+		chrome = 3
+	}
+	detailsBody := 1
+	if m.height >= 24 {
+		detailsBody = 5
+	} else if m.height >= 16 {
+		detailsBody = 3
+	}
+	overlay := m.help || m.creating
+collapse:
+	for {
+		header := m.headerBar(cw)
+		if headerLimit > 0 {
+			header = padBlock(header, cw, min(blockHeight(header), headerLimit))
+		}
+		kind := m.currentBanner(dropUser, dropOrphan)
+		banner := m.bannerLine(cw, kind)
+		footer := m.footer(cw)
+		if footerLimit > 0 {
+			footer = padBlock(footer, cw, min(blockHeight(footer), footerLimit))
+		}
+		headerH, bannerH, footerH := blockHeight(header), blockHeight(banner), blockHeight(footer)
+		remaining := m.height - headerH - bannerH - footerH
+		p.header, p.banner, p.footer = header, banner, footer
+		p.headerH, p.bannerH, p.footerH = headerH, bannerH, footerH
+		p.chrome = chrome
+		if remaining < 0 {
+			remaining = 0
+		}
+		if overlay {
+			p.overlayH = remaining
+			if headerH+bannerH+footerH+remaining <= m.height && remaining >= 1 {
+				break
+			}
+		} else {
+			detailChrome := chrome
+			listChrome := chrome
+			body := detailsBody
+			if body == 0 {
+				detailChrome = 0
+			}
+			detailPane := body + detailChrome
+			if body == 0 {
+				detailPane = 0
+			}
+			listPane := remaining - detailPane
+			listBody := listPane - listChrome
+			if listBody >= 2 && headerH+bannerH+footerH+listPane+detailPane <= m.height {
+				p.listH, p.detailsH = listPane, detailPane
+				break
+			}
+			p.listH, p.detailsH = max(0, listPane), max(0, detailPane)
+		}
+		switch {
+		case chrome == 3:
+			chrome = 1
+		case detailsBody > 0 && !overlay:
+			detailsBody = 0
+		case !dropUser:
+			dropUser = true
+		case !dropOrphan:
+			dropOrphan = true
+		case footerLimit == 0:
+			footerLimit = 2
+		case headerLimit == 0:
+			headerLimit = 2
+		default:
+			break collapse
+		}
+	}
+	inner := func(h, chrome int) int {
+		if chrome == 3 {
+			return max(0, h-3)
+		}
+		if chrome == 1 {
+			return max(0, h-1)
+		}
+		return max(0, h)
+	}
+	innerW := func(chrome int) int {
+		if chrome == 3 {
+			return max(1, cw-2)
+		}
+		return cw
+	}
+	if overlay {
+		bodyW, bodyH := innerW(p.chrome), inner(p.overlayH, p.chrome)
+		p.overlay = m.panel(m.overlayTitle(), m.overlayBody(bodyW, bodyH), cw, p.overlayH, p.chrome)
+		p.inputX = 1
+		if p.chrome == 3 {
+			p.inputX++
+		}
+		p.inputY = p.headerH + p.bannerH
+		if p.chrome == 3 {
+			p.inputY += 2
+		} else if p.chrome == 1 {
+			p.inputY += 1
+		}
+		p.inputY++
+	} else {
+		listInnerW, listInnerH := innerW(p.chrome), inner(p.listH, p.chrome)
+		detailInnerW, detailInnerH := innerW(p.chrome), inner(p.detailsH, p.chrome)
+		p.list = m.panel(m.listTitle(), m.listBody(listInnerW, listInnerH), cw, p.listH, p.chrome)
+		if p.detailsH > 0 {
+			p.details = m.panel("Details", m.detailsBody(detailInnerW, detailInnerH), cw, p.detailsH, p.chrome)
+		}
+		p.inputX = 1
+		p.inputY = p.headerH
+	}
+	if m.searching {
+		p.inputX = 1 + lipgloss.Width("Find: ")
+		p.inputY = p.headerH
+	}
+	p.inputOnScreen = p.inputY >= 0 && p.inputY < m.height && p.inputX >= 0 && p.inputX < m.width
+	body := joinBlocks(p.header, p.banner, p.list, p.details, p.overlay)
+	lines := []string{}
+	if body != "" {
+		lines = strings.Split(body, "\n")
+	}
+	footerLines := []string{}
+	if p.footer != "" {
+		footerLines = strings.Split(p.footer, "\n")
+	}
+	need := m.height - len(footerLines)
+	if need < 0 {
+		footerLines = footerLines[:m.height]
+		need = 0
+	}
+	for len(lines) < need {
+		lines = append(lines, "")
+	}
+	if len(lines) > need {
+		lines = lines[:need]
+	}
+	lines = append(lines, footerLines...)
+	for i := range lines {
+		lines[i] = " " + lines[i]
+		lines[i] = clip(lines[i], m.width)
+	}
+	p.frame = strings.Join(lines, "\n")
+	if lipgloss.Height(p.frame) < m.height {
+		p.frame = padBlock(p.frame, m.width, m.height)
+	}
+	return p
+}
+
+func (m *dashboard) View() tea.View {
+	focused := m.input.Focused()
+	m.input.SetVirtualCursor(false)
+	p := m.plan()
+	if focused && !p.inputOnScreen {
+		m.input.SetVirtualCursor(true)
+		p = m.plan()
+	}
+	v := tea.NewView(p.frame)
+	v.AltScreen = true
+	if focused && p.inputOnScreen {
+		if c := m.input.Cursor(); c != nil {
+			c.Position.X += p.inputX
+			c.Position.Y += p.inputY
+			v.Cursor = c
+		}
+	}
+	return v
 }
