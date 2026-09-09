@@ -37,7 +37,7 @@ Choose a number from the menu:
 - **Continue working on a branch** - choose your branch and get back to work.
 - **Start a new branch** - enter its name; Treehouse prepares the tree and opens your shell.
 - **Open an existing tree** - pick a tree by its branch and status. Its files stay as you leave them.
-- **Clean up unused trees** - review the trees and space to reclaim, then confirm removal.
+- **Clean up unused trees** - review each tree's branch (or labeled last-used branch) and space to reclaim, then confirm removal. Git branches are kept.
 
 Type `exit` to finish in the tree and return to your original terminal. Run `treehouse` again to choose different work. Choose `q` to cancel a menu.
 Unfinished changes are kept by default on exit; discarding them requires answering yes.

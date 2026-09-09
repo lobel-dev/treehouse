@@ -16,9 +16,11 @@ import (
 // PruneWorktree describes a stale or explicitly selected orphaned worktree that
 // prune can remove or did remove.
 type PruneWorktree struct {
-	Name  string
-	Path  string
-	Bytes int64
+	// LastBranch is advisory display history, never a deletion safety input.
+	LastBranch string
+	Name       string
+	Path       string
+	Bytes      int64
 	// Orphaned marks a backing-repository-missing worktree that was explicitly
 	// included by PruneOptions.PruneOrphans.
 	Orphaned bool
@@ -325,6 +327,7 @@ func planPrune(entries []WorktreeEntry, resolveContext pruneContextResolver, opt
 			plan.Result.Skipped = append(plan.Result.Skipped, skipped)
 			continue
 		}
+		worktree.LastBranch = visibleLastBranch(wt)
 		plan.Result.Candidates = append(plan.Result.Candidates, worktree)
 		plan.Result.ReclaimableBytes += worktree.Bytes
 		plan.Planned[worktree.Path] = plannedPruneWorktree{

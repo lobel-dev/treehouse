@@ -229,3 +229,42 @@ func TestInteractiveJJHomeE2E(t *testing.T) {
 		}
 	}
 }
+
+func TestInteractivePruneIdentifiesBranchE2E(t *testing.T) {
+	for _, kind := range []string{"current", "parked", "unknown"} {
+		t.Run(kind, func(t *testing.T) {
+			repo, home := setupTestRepo(t)
+			path := idleReportingSlot(t, repo, home)
+			want := "No branch checked out; no branch history"
+			if kind != "unknown" {
+				gitCmd(t, path, "switch", "-c", "feature/recognizable")
+				want = "feature/recognizable"
+				if kind == "parked" {
+					_, stderr, code := runTreehouse(t, repo, home, nil, "return", path)
+					if code != 0 {
+						t.Fatal(stderr)
+					}
+					want += " (last used)"
+				}
+			}
+			statePath := filepath.Join(filepath.Dir(filepath.Dir(path)), "treehouse-state.json")
+			before, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, stderr, code := runInteractiveInput(t, repo, home, "4\nn\nq\n", "menu")
+			start := strings.Index(stderr, "Unused trees ready to remove:")
+			end := strings.Index(stderr, "Remove the listed trees?")
+			if code != 0 || start < 0 || end < start || !strings.Contains(stderr[start:end], want) {
+				t.Fatalf("cleanup does not identify %s branch before confirming: %d %s", kind, code, stderr)
+			}
+			after, err := os.ReadFile(statePath)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("preview changed state: %v", err)
+			}
+			if _, err := os.Stat(path); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
