@@ -161,6 +161,56 @@ func TestDashboardPastedBranch(t *testing.T) {
 	}
 }
 
+func TestDashboardStandaloneCleanupResultEscape(t *testing.T) {
+	m := newDashboard(DashboardOptions{Page: CleanupPage, Load: func(Page) (DashboardSnapshot, error) {
+		t.Fatal("standalone cleanup result escape loaded another page")
+		return DashboardSnapshot{}, nil
+	}})
+	m.page = ResultPage
+	m.options.Result = "Removed 1 unused trees.\n"
+	special(m, tea.KeyEscape)
+	if m.action.Kind != NoAction || !m.exiting || m.page != ResultPage {
+		t.Fatalf("standalone cleanup result escape did not exit: page=%v exiting=%v action=%+v", m.page, m.exiting, m.action)
+	}
+}
+
+func TestDashboardHomeCleanupResultEscape(t *testing.T) {
+	m := fixtureDashboard()
+	m.page = ResultPage
+	m.options.Result = "Canceled. Nothing removed."
+	special(m, tea.KeyEscape)
+	if m.exiting || m.action.Kind != NoAction {
+		t.Fatal("home cleanup result escape exited the workspace")
+	}
+	if m.page != HomePage {
+		t.Fatalf("home cleanup result escape went to %v", m.page)
+	}
+}
+
+func TestDashboardPastedControlsAreSanitized(t *testing.T) {
+	payload := "feat/\x1b]0;pwned\x07evil\x1b[31mred\n\tname"
+	m := fixtureDashboard()
+	press(m, 'n')
+	m.Update(tea.PasteMsg{Content: payload})
+	if got := m.input.Value(); got != "feat/evilredname" {
+		t.Fatalf("branch paste left controls or dropped text: %q", got)
+	}
+	view := m.View().Content
+	if strings.Contains(view, "\x1b]0") || strings.Contains(view, "\x1b[31m") || strings.Contains(view, "\x07") {
+		t.Fatalf("pasted controls reached the terminal: %q", view)
+	}
+
+	m = fixtureDashboard()
+	press(m, '/')
+	m.Update(tea.PasteMsg{Content: "quiet\x1b[0m"})
+	if got := m.input.Value(); got != "quiet" {
+		t.Fatalf("search paste left CSI: %q", got)
+	}
+	if rows := m.rows(); len(rows) != 1 || rows[0].ID != "b" {
+		t.Fatalf("sanitized search failed to match: %+v", rows)
+	}
+}
+
 func TestDashboardCleanupRetainsHomeSelection(t *testing.T) {
 	m := fixtureDashboard()
 	m.options.Selection = m.selection

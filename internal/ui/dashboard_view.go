@@ -23,6 +23,10 @@ func dashboardText(s string) string {
 	}, ansi.Strip(s))
 }
 
+func sanitizeField(s string) string {
+	return strings.ReplaceAll(dashboardText(s), "\n", "")
+}
+
 type workspacePalette struct{ text, muted, accent, selected, warning string }
 
 func (m *dashboard) palette() workspacePalette {

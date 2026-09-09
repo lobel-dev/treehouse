@@ -165,6 +165,20 @@ func (m *dashboard) finish(a Action) (tea.Model, tea.Cmd) {
 	m.exiting = true
 	return m, tea.Quit
 }
+func (m *dashboard) leaveResult() (tea.Model, tea.Cmd) {
+	if m.options.Page == CleanupPage || m.options.Page == ResultPage {
+		return m.finish(Action{})
+	}
+	return m, m.navigate(HomePage)
+}
+func (m *dashboard) acceptField(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	if v := sanitizeField(m.input.Value()); v != m.input.Value() {
+		m.input.SetValue(v)
+	}
+	return cmd
+}
 func (m *dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -205,10 +219,8 @@ func (m *dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.finish(Action{Kind: CreateBranch, Target: msg.name})
 	case tea.PasteMsg:
 		if (m.creating || m.searching) && !m.validating {
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
 			m.selected, m.detailOffset = 0, 0
-			return m, cmd
+			return m, m.acceptField(tea.PasteMsg{Content: sanitizeField(msg.Content)})
 		}
 	case tea.KeyPressMsg:
 		key := msg.String()
@@ -253,9 +265,7 @@ func (m *dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				generation, validate := m.generation, m.options.ValidateBranch
 				return m, func() tea.Msg { return validationMsg{generation, name, validate(name)} }
 			}
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			return m, cmd
+			return m, m.acceptField(msg)
 		}
 		if m.searching {
 			switch key {
@@ -267,17 +277,18 @@ func (m *dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "enter", "up", "down", "pgup", "pgdown": // navigation remains available while filtering
 			default:
-				var cmd tea.Cmd
-				m.input, cmd = m.input.Update(msg)
 				m.selected = 0
 				m.detailOffset = 0
-				return m, cmd
+				return m, m.acceptField(msg)
 			}
 		}
 		switch key {
 		case "q":
 			return m.finish(Action{})
 		case "esc":
+			if m.page == ResultPage {
+				return m.leaveResult()
+			}
 			if m.page == HomePage || m.page == m.options.Page {
 				return m.finish(Action{})
 			}
@@ -328,10 +339,7 @@ func (m *dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if m.page == ResultPage {
-				if m.options.Page == CleanupPage || m.options.Page == ResultPage {
-					return m.finish(Action{})
-				}
-				return m, m.navigate(HomePage)
+				return m.leaveResult()
 			}
 			if m.loading || m.err != "" {
 				return m, nil

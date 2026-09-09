@@ -45,24 +45,13 @@ func runWorkspace(page ui.Page) error {
 			return enterWorktree(&pool.WorktreeStatus{Path: action.Target, Name: action.Name})
 		case ui.RemoveTrees:
 			run, cfg, err := interactivePruneRunner()
-			resultText := ""
+			var result pool.PruneResult
 			if err == nil {
-				var result pool.PruneResult
 				result, err = run(pool.PruneOptions{CandidatePaths: action.Paths, PruneOrphans: pruneOrphans, PreDestroy: cfg.Hooks.PreDestroy})
-				resultText = fmt.Sprintf("Removed %d unused trees.\n", len(result.Pruned))
-				if len(result.Pruned) < len(action.Paths) {
-					resultText += "Trees that could not be safely removed were kept.\n"
-				}
-				for _, skip := range result.Skipped {
-					resultText += fmt.Sprintf("Kept tree %s — %s.\n", skip.Name, skip.Reason)
-				}
-			}
-			if err != nil {
-				resultText += "Cleanup failed: " + err.Error()
 			}
 			// A result is shown before returning home. No input reader survives into
 			// hooks or mutation; the engine revalidates the exact displayed paths.
-			options.Result = resultText
+			options.Result = cleanupResultText(result, len(action.Paths), err)
 		}
 	}
 }
@@ -176,4 +165,18 @@ func workspaceCleanupSnapshot() (ui.DashboardSnapshot, error) {
 		s.Rows = append(s.Rows, ui.DashboardRow{ID: skip.Path, Label: "Tree " + skip.Name, Status: "protected", Details: ui.PrettyPath(skip.Path) + "\nKeeping: " + skip.Reason})
 	}
 	return s, nil
+}
+
+func cleanupResultText(result pool.PruneResult, requested int, err error) string {
+	if err != nil {
+		return "Cleanup failed: " + err.Error()
+	}
+	text := fmt.Sprintf("Removed %d unused trees.\n", len(result.Pruned))
+	if len(result.Pruned) < requested {
+		text += "Trees that could not be safely removed were kept.\n"
+	}
+	for _, skip := range result.Skipped {
+		text += fmt.Sprintf("Kept tree %s — %s.\n", skip.Name, skip.Reason)
+	}
+	return text
 }
