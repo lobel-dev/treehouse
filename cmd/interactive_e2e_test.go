@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,42 @@ func runInteractiveInput(t *testing.T, repo, home, input string, args ...string)
 		}
 	}
 	return out.String(), stderr.String(), code
+}
+
+func TestInteractiveBranchPickerBulkScanE2E(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	for i := 0; i < 40; i++ {
+		gitCmd(t, repo, "branch", fmt.Sprintf("feature/%03d", i))
+	}
+	trace := filepath.Join(t.TempDir(), "git-trace")
+	child := exec.Command(treehouseBin, "menu")
+	child.Dir = repo
+	child.Env = buildEnv(home, "GIT_TRACE="+trace)
+	child.Stdin = strings.NewReader("1\nq\nq\n")
+	out, err := child.CombinedOutput()
+	if err != nil {
+		t.Fatalf("menu: %v\n%s", err, out)
+	}
+	data, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"built-in: git for-each-ref", "built-in: git worktree list"} {
+		if count := strings.Count(string(data), command); count != 1 {
+			t.Errorf("%s ran %d times, want one bulk scan", command, count)
+		}
+	}
+	if !strings.Contains(string(out), "feature/039") || strings.Contains(string(out), "Setting up worktree") {
+		t.Fatalf("picker changed choices or acquired on cancel: %s", out)
+	}
+}
+
+func TestInteractiveChildOrdinaryFailureE2E(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	_, stderr, code := runInteractiveInput(t, repo, home, "2\nmain\n", "menu")
+	if code != 0 || strings.Count(stderr, "checked out outside this pool") != 1 || strings.Contains(stderr, "exit status") || strings.Count(stderr, "Treehouse ·") != 1 {
+		t.Fatalf("ordinary failure duplicated or reopened home: code=%d stderr=%s", code, stderr)
+	}
 }
 
 func TestInteractiveHomeCancelE2E(t *testing.T) {

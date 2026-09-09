@@ -20,6 +20,9 @@ type BranchState struct {
 	Holders []BranchHolder
 }
 
+// ListWorkBranches returns sorted, deduplicated local and origin branch names.
+// Names are literal (without ref prefixes); HEAD and other remotes are excluded.
+// It reads refs without fetching or modifying the repository.
 func ListWorkBranches(repo string) ([]string, error) {
 	out, err := runGit(repo, "for-each-ref", "--format=%(refname)", "refs/heads/", "refs/remotes/origin/")
 	if err != nil {
@@ -44,6 +47,36 @@ func ListWorkBranches(repo string) ([]string, error) {
 	}
 	sort.Strings(result)
 	return result, nil
+}
+
+// WorkBranch is a branch name and its registered local worktree holders.
+// It is an advisory snapshot, not authorization to acquire or reset a tree.
+type WorkBranch struct {
+	Name    string
+	Holders []BranchHolder
+}
+
+// ListWorkBranchStates adds worktree holders to ListWorkBranches using one ref
+// scan and one registration scan. It does not fetch or modify repository state;
+// callers must revalidate any selected branch before acting on it.
+func ListWorkBranchStates(repo string) ([]WorkBranch, error) {
+	names, err := ListWorkBranches(repo)
+	if err != nil {
+		return nil, err
+	}
+	holders, err := registeredBranchHolders(repo)
+	if err != nil {
+		return nil, err
+	}
+	branches := make([]WorkBranch, 0, len(names))
+	for _, name := range names {
+		checked, err := statBranchHolders(holders[name])
+		if err != nil {
+			return nil, err
+		}
+		branches = append(branches, WorkBranch{Name: name, Holders: checked})
+	}
+	return branches, nil
 }
 
 func ValidateLiteralBranch(repo, branch string) error {
@@ -73,21 +106,38 @@ func InspectBranch(repo, branch string) (BranchState, error) {
 			facts.Origin = true
 		}
 	}
-	data, err := runGitRaw(repo, "worktree", "list", "--porcelain", "-z")
+	holders, err := registeredBranchHolders(repo)
 	if err != nil {
 		return facts, err
 	}
+	facts.Holders, err = statBranchHolders(holders[branch])
+	return facts, err
+}
+
+func statBranchHolders(holders []BranchHolder) ([]BranchHolder, error) {
+	for i := range holders {
+		_, err := os.Stat(holders[i].Path)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		holders[i].Missing = os.IsNotExist(err)
+	}
+	return holders, nil
+}
+
+func registeredBranchHolders(repo string) (map[string][]BranchHolder, error) {
+	data, err := runGitRaw(repo, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return nil, err
+	}
+	holders := make(map[string][]BranchHolder)
 	var holder BranchHolder
 	attached := ""
 	for _, field := range strings.Split(string(data), "\x00") {
 		if field == "" {
-			if attached == "refs/heads/"+branch {
-				_, statErr := os.Stat(holder.Path)
-				if statErr != nil && !os.IsNotExist(statErr) {
-					return facts, statErr
-				}
-				holder.Missing = os.IsNotExist(statErr)
-				facts.Holders = append(facts.Holders, holder)
+			if strings.HasPrefix(attached, "refs/heads/") {
+				name := strings.TrimPrefix(attached, "refs/heads/")
+				holders[name] = append(holders[name], holder)
 			}
 			holder, attached = BranchHolder{}, ""
 			continue
@@ -102,7 +152,7 @@ func InspectBranch(repo, branch string) (BranchState, error) {
 			holder.Locked = true
 		}
 	}
-	return facts, nil
+	return holders, nil
 }
 
 func verifiedSlotGit(repo, path string) (gitRunner, error) {

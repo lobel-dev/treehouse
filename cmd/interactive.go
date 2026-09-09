@@ -88,7 +88,7 @@ func startBranch(repo string) (bool, error) {
 }
 
 func chooseWorkBranch(repo string) (bool, error) {
-	branches, err := vcs.ListGitWorkBranches(repo)
+	branches, err := vcs.ListGitWorkBranchStates(repo)
 	if err != nil {
 		return false, err
 	}
@@ -98,31 +98,11 @@ func chooseWorkBranch(repo string) (bool, error) {
 	}
 	var names, labels []string
 	for _, branch := range branches {
-		facts, err := vcs.InspectGitBranch(repo, branch)
-		if err != nil {
-			return false, err
+		label, eligible := workBranchLabel(branch, slots)
+		if !eligible {
+			continue
 		}
-		label := branch
-		if len(facts.Holders) > 0 {
-			// A checkout outside this pool cannot be resumed here. Protected
-			// pool trees remain accessible through the existing-tree picker.
-			eligible := len(facts.Holders) == 1
-			found := false
-			for _, slot := range slots {
-				if len(facts.Holders) == 1 && sameMenuPath(slot.Path, facts.Holders[0].Path) {
-					found = true
-					eligible = eligible && (slot.Status == pool.StatusAvailable || slot.Status == pool.StatusDirty)
-					label += " · tree " + slot.Name
-					if slot.Status == pool.StatusDirty {
-						label += " · uncommitted changes"
-					}
-				}
-			}
-			if !eligible || !found {
-				continue
-			}
-		}
-		names = append(names, branch)
+		names = append(names, branch.Name)
 		labels = append(labels, label)
 	}
 	if len(names) == 0 {
@@ -134,6 +114,30 @@ func chooseWorkBranch(repo string) (bool, error) {
 		return false, err
 	}
 	return runHomeWork("work", names[i])
+}
+
+func workBranchLabel(branch vcs.GitWorkBranch, slots []pool.WorktreeStatus) (string, bool) {
+	label := branch.Name
+	if len(branch.Holders) == 0 {
+		return label, true
+	}
+	// A checkout outside this pool cannot be resumed here. Protected pool
+	// trees remain accessible through the existing-tree picker.
+	if len(branch.Holders) != 1 {
+		return "", false
+	}
+	found, eligible := false, true
+	for _, slot := range slots {
+		if sameMenuPath(slot.Path, branch.Holders[0].Path) {
+			found = true
+			eligible = eligible && (slot.Status == pool.StatusAvailable || slot.Status == pool.StatusDirty)
+			label += " · tree " + slot.Name
+			if slot.Status == pool.StatusDirty {
+				label += " · uncommitted changes"
+			}
+		}
+	}
+	return label, found && eligible
 }
 
 func sameMenuPath(a, b string) bool {
@@ -191,8 +195,8 @@ func runHomeWork(args ...string) (bool, error) {
 	}
 	err = child.Wait()
 	var exited *exec.ExitError
-	if errors.As(err, &exited) {
+	if errors.As(err, &exited) && exited.ExitCode() >= 0 {
 		return true, nil
-	} // The command already explained it.
+	} // Ordinary exits were explained by the command; signals may be silent.
 	return true, err
 }

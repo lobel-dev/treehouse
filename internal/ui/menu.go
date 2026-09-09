@@ -10,8 +10,15 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
+// IsInteractive requires all three standard streams to be native or MSYS/Cygwin
+// terminals. Redirecting any stream retains non-interactive command behavior.
 func IsInteractive() bool {
-	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stderr.Fd())
+	for _, stream := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
+		if !isatty.IsTerminal(stream.Fd()) && !isatty.IsCygwinTerminal(stream.Fd()) {
+			return false
+		}
+	}
+	return true
 }
 
 // ReadLine deliberately does not read ahead: the next input may belong to a
