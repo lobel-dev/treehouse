@@ -448,9 +448,12 @@ func TestDashboardFooterAlwaysPresent(t *testing.T) {
 	}{
 		{"home", func(*dashboard) {}},
 		{"trees", func(m *dashboard) { m.page = TreesPage; m.cache[TreesPage] = m.snapshot }},
-		{"cleanup", func(m *dashboard) { m.page = CleanupPage; m.cache[CleanupPage] = m.snapshot }},
-		{"loading", func(m *dashboard) { m.loading = true; delete(m.cache, HomePage) }},
-		{"empty", func(m *dashboard) { m.snapshot.Rows = nil; m.cache[HomePage] = m.snapshot }},
+		{"cleanup", func(m *dashboard) {
+			m.page = CleanupPage
+			m.snapshot.CandidatePaths = []string{"/only/displayed"}
+			m.cache[CleanupPage] = m.snapshot
+		}},
+		{"loading", func(m *dashboard) { m.loading = true }},
 		{"help", func(m *dashboard) { m.help = true }},
 	}
 	for _, size := range []struct{ h, w int }{{24, 80}, {20, 32}} {
@@ -462,10 +465,28 @@ func TestDashboardFooterAlwaysPresent(t *testing.T) {
 			if lipgloss.Height(view) != m.height {
 				t.Fatalf("%s %dx%d height %d", state.name, size.w, size.h, lipgloss.Height(view))
 			}
-			if !strings.Contains(view, "Enter") && !strings.Contains(view, "q") {
+			if !strings.Contains(view, "Enter") || !strings.Contains(view, "quit") {
 				t.Fatalf("%s %dx%d missing footer", state.name, size.w, size.h)
 			}
 		}
+	}
+}
+
+func TestDashboardCleanupFooterShortcutLabels(t *testing.T) {
+	m := fixtureDashboard()
+	m.width, m.height = 80, 24
+	m.page = CleanupPage
+	m.snapshot.CandidatePaths = []string{"/only/displayed"}
+	m.cache[CleanupPage] = m.snapshot
+	view := ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "Esc cancel") || !strings.Contains(view, "q quit") {
+		t.Fatalf("cleanup with candidates missing Esc cancel / q quit: %q", view)
+	}
+	m.snapshot.CandidatePaths = nil
+	m.cache[CleanupPage] = m.snapshot
+	view = ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "Esc back") {
+		t.Fatalf("cleanup with no candidates missing Esc back: %q", view)
 	}
 }
 

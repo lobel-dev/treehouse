@@ -20,7 +20,7 @@ Env TREEHOUSE_NO_UPDATE_CHECK "1"
 Env SHELL "/bin/bash"
 
 Hide
-Type "TMPDIR=$(mktemp -d) && git init --bare $TMPDIR/remote.git && git init $TMPDIR/myproject && cd $TMPDIR/myproject && git remote add origin $TMPDIR/remote.git && git commit --allow-empty -m 'init' && git branch feature/alpha && git branch feature/beta && git push origin main && clear && cd $TMPDIR"
+Type "TMPDIR=$(mktemp -d) && git init --bare -b main $TMPDIR/remote.git && git init -b main $TMPDIR/myproject && cd $TMPDIR/myproject && git remote add origin $TMPDIR/remote.git && git commit --allow-empty -m 'init' && git branch feature/alpha && git branch feature/beta && git push origin main && clear && cd $TMPDIR"
 Enter
 Sleep 2s
 Show

@@ -489,9 +489,9 @@ func (m *dashboard) footer(width int) string {
 	case m.page == CleanupPage:
 		if len(m.visible().CandidatePaths) > 0 {
 			note = "Git branches are kept."
-			secondary = "Esc  cancel  q quit"
+			secondary = "Esc cancel  q quit"
 		} else {
-			secondary = "Esc  back  q quit"
+			secondary = "Esc back  q quit"
 		}
 	case m.page == TreesPage:
 		secondary = "/ find  ? help  q quit"
