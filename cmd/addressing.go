@@ -60,13 +60,21 @@ func resolveCurrentBranchSlot(branch string) (*pool.WorktreeStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(facts.Holders) == 0 {
+	// Entry is read-only: ignore proven-missing checkouts without pruning
+	// registrations. InspectGitBranch fails closed on other stat errors.
+	holders := facts.Holders[:0]
+	for _, holder := range facts.Holders {
+		if !holder.Missing {
+			holders = append(holders, holder)
+		}
+	}
+	if len(holders) == 0 {
 		return nil, fmt.Errorf("branch %q is not checked out in this pool; resume with treehouse work %s", branch, quoteReturnPath(branch))
 	}
-	if len(facts.Holders) != 1 {
+	if len(holders) != 1 {
 		return nil, fmt.Errorf("branch %q has ambiguous worktree registrations; inspect git worktree list", branch)
 	}
-	holder := facts.Holders[0]
+	holder := holders[0]
 	info, err := os.Stat(holder.Path)
 	if err != nil {
 		return nil, fmt.Errorf("cannot inspect branch checkout %s: %w", holder.Path, err)

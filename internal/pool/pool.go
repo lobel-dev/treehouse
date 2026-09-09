@@ -655,6 +655,13 @@ func ReleaseConditional(poolDir, worktreePath, baseBranch string, preconditions 
 	return err
 }
 
+// ReleaseConditionalReport performs ReleaseConditional with the same base,
+// precondition, callback, and state-lock contract, returning a report only after
+// pool state is saved. Damaged slots report reservation clearing without a reset.
+// On any error the report is zero, but effects are not rolled back: beforeReset
+// may have run, files may be partly reset, or parking may have completed before
+// state persistence failed. Callers must not interpret an error as no mutation
+// or print a successful release report on that path.
 func ReleaseConditionalReport(poolDir, worktreePath, baseBranch string, preconditions ReleasePreconditions, beforeReset func() error) (ReleaseReport, error) {
 	var report ReleaseReport
 	markerless := vcs.WorktreeBackendName(worktreePath) == ""

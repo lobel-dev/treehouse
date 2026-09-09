@@ -566,8 +566,22 @@ func returnWorktreeWithBackend(b Backend, worktreePath, branch, fallback string,
 
 // ReturnReport contains Git facts only when Git's return operation observed them.
 type ReturnReport = gitvcs.ReturnReport
+
+// UnpreservedHeadError identifies a Git return refusal with no available durable
+// branch, tag, or remote ref preserving Head; a reflog alone is insufficient.
+// Callers can use errors.As to distinguish this from an inspection or lock error
+// and suggest creating a preserving ref before retrying. It precedes beforeReset
+// and any reset of the worktree.
 type UnpreservedHeadError = gitvcs.UnpreservedHeadError
 
+// ReturnWorktreeReport resets a marked worktree through its own backend with
+// ReturnWorktree's preservation, fallback, seeded cleanup, and callback contract.
+// It does not update pool reservations. Git observations are captured under its
+// return locks; other backends report only Parked and TargetBranch. Markerless
+// paths are refused without invoking beforeReset.
+// A non-nil error may accompany partial observations and does not imply that
+// beforeReset or file updates were undone. Parked is true only after a completed
+// reset; optional observations never authorize cleanup or prove pool release.
 func ReturnWorktreeReport(worktreePath, branch, fallback string, seededPaths []string, beforeReset func() error) (ReturnReport, error) {
 	b, err := destructiveBackendForWorktree(worktreePath)
 	if err != nil {
@@ -611,6 +625,8 @@ func InspectGitBase(path, branch, expectedHead string) (atBase, merged, known bo
 	return gitvcs.InspectBase(path, branch, expectedHead)
 }
 
+// GitBranchState reports exact local/origin refs and registered local branch
+// holders, including missing paths; it is not an ownership or safety verdict.
 type GitBranchState = gitvcs.BranchState
 
 // ListGitWorkBranches returns sorted, deduplicated literal local and origin
@@ -636,6 +652,8 @@ func ListGitWorkBranchStates(repo string) ([]GitWorkBranch, error) {
 	return gitvcs.ListWorkBranchStates(repo)
 }
 
+// VerifyGitSlotRepository requires a Git-marked slot at path and verifies that
+// its common Git directory has the same filesystem identity as repo's, read-only.
 func VerifyGitSlotRepository(repo, path string) error {
 	if WorktreeBackendName(path) != "git" {
 		return fmt.Errorf("target %s is not a Git slot", path)
@@ -643,6 +661,8 @@ func VerifyGitSlotRepository(repo, path string) error {
 	return gitvcs.VerifySlotRepository(repo, path)
 }
 
+// ValidateGitBranch requires the Git backend and validates a literal branch
+// name without resolving revisions or requiring the branch to exist.
 func ValidateGitBranch(repo, branch string) error {
 	if BackendNameFor(repo) != "git" {
 		return fmt.Errorf("branch workflow requires Git")
@@ -650,6 +670,8 @@ func ValidateGitBranch(repo, branch string) error {
 	return gitvcs.ValidateLiteralBranch(repo, branch)
 }
 
+// InspectGitBranch requires the Git backend and reads literal branch refs and
+// worktree registrations without fetching, healing, or changing a checkout.
 func InspectGitBranch(repo, branch string) (GitBranchState, error) {
 	if BackendNameFor(repo) != "git" {
 		return GitBranchState{}, fmt.Errorf("branch workflow requires Git")
@@ -657,6 +679,9 @@ func InspectGitBranch(repo, branch string) (GitBranchState, error) {
 	return gitvcs.InspectBranch(repo, branch)
 }
 
+// WithGitBranchIdentity verifies a Git slot belongs to repo and directly holds
+// branch, locking HEAD then the branch ref through callback. The caller must
+// hold the pool lock through this call and persist ownership inside callback.
 func WithGitBranchIdentity(repo, path, branch string, callback func() error) error {
 	if WorktreeBackendName(path) != "git" {
 		return fmt.Errorf("target %s is not a Git slot", path)
@@ -664,6 +689,9 @@ func WithGitBranchIdentity(repo, path, branch string, callback func() error) err
 	return gitvcs.WithBranchIdentity(repo, path, branch, callback)
 }
 
+// SwitchGitBranch verifies a Git slot belongs to repo, then switches to a local
+// branch, tracks origin, or creates at the slot's HEAD, retaining Git's checkout
+// guards. The caller must hold the pool lock and own the slot throughout.
 func SwitchGitBranch(repo, path, branch string) error {
 	if WorktreeBackendName(path) != "git" {
 		return fmt.Errorf("target %s is not a Git slot", path)

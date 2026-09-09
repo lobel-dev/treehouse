@@ -101,6 +101,91 @@ func TestAddressingRefusalsPreserveLeaseE2E(t *testing.T) {
 	}
 }
 
+func TestEnterBranchMissingHolderE2E(t *testing.T) {
+	for _, locked := range []bool{false, true} {
+		name := "unlocked"
+		if locked {
+			name = "locked"
+		}
+		t.Run(name, func(t *testing.T) {
+			repo, home := setupTestRepo(t)
+			path := idleReportingSlot(t, repo, home)
+			branch := "feature/stale"
+			gitCmd(t, path, "switch", "-c", branch)
+			other := filepath.Join(filepath.Dir(repo), "stale")
+			gitCmd(t, repo, "worktree", "add", "--force", other, branch)
+			if locked {
+				gitCmd(t, repo, "worktree", "lock", other)
+			}
+			if err := os.RemoveAll(other); err != nil {
+				t.Fatal(err)
+			}
+			statePath := filepath.Join(filepath.Dir(filepath.Dir(path)), "treehouse-state.json")
+			before, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			registrations := gitCmd(t, repo, "worktree", "list", "--porcelain")
+			out, stderr, code := runTreehouse(t, repo, home, nil, "enter", "--branch", branch, "--print-path")
+			if code != 0 || strings.TrimSpace(out) != path {
+				t.Fatalf("missing holder blocked live checkout: %d %s %s", code, out, stderr)
+			}
+			if after := gitCmd(t, repo, "worktree", "list", "--porcelain"); after != registrations {
+				t.Fatal("enter changed worktree registrations")
+			}
+			after, err := os.ReadFile(statePath)
+			if err != nil || string(before) != string(after) {
+				t.Fatalf("enter changed state: %v", err)
+			}
+
+			// With no live checkout, stale registrations must not resolve a slot.
+			if err := os.RemoveAll(path); err != nil {
+				t.Fatal(err)
+			}
+			registrations = gitCmd(t, repo, "worktree", "list", "--porcelain")
+			out, stderr, code = runTreehouse(t, repo, home, nil, "enter", "--branch", branch, "--print-path")
+			if code != 1 || out != "" || !strings.Contains(stderr, "work "+quoteReturnPath(branch)) {
+				t.Fatalf("missing-only holders resolved: %d %s %s", code, out, stderr)
+			}
+			if after := gitCmd(t, repo, "worktree", "list", "--porcelain"); after != registrations {
+				t.Fatal("enter changed missing registrations")
+			}
+			after, err = os.ReadFile(statePath)
+			if err != nil || string(before) != string(after) {
+				t.Fatalf("enter healed missing state: %v", err)
+			}
+		})
+	}
+}
+
+func TestEnterBranchUnverifiableHolderE2E(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	path := idleReportingSlot(t, repo, home)
+	branch := "feature/unverifiable"
+	gitCmd(t, path, "switch", "-c", branch)
+	other := filepath.Join(filepath.Dir(repo), "unverifiable")
+	gitCmd(t, repo, "worktree", "add", "--force", other, branch)
+	if err := os.RemoveAll(other); err != nil {
+		t.Fatal(err)
+	}
+	// A symlink loop produces a stat error other than not-exist, even when
+	// tests run with elevated privileges. Do not treat it as a missing holder.
+	if err := os.Symlink(other, other); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := os.Stat(other); err == nil || os.IsNotExist(err) {
+		t.Fatalf("expected an unverifiable holder, got %v", err)
+	}
+	registrations := gitCmd(t, repo, "worktree", "list", "--porcelain")
+	out, stderr, code := runTreehouse(t, repo, home, nil, "enter", "--branch", branch, "--print-path")
+	if code != 1 || out != "" || stderr == "" {
+		t.Fatalf("unverifiable holder ignored: %d %s %s", code, out, stderr)
+	}
+	if after := gitCmd(t, repo, "worktree", "list", "--porcelain"); after != registrations {
+		t.Fatal("enter changed unverifiable registrations")
+	}
+}
+
 func TestEnterBranchAmbiguityE2E(t *testing.T) {
 	repo, home := setupTestRepo(t)
 	path := idleReportingSlot(t, repo, home)

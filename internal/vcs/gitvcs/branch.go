@@ -8,12 +8,16 @@ import (
 	"strings"
 )
 
+// BranchHolder describes an actual Git worktree registration for a branch.
+// Missing registrations remain visible; Locked means Git forbids pruning them.
 type BranchHolder struct {
 	Path    string
 	Locked  bool
 	Missing bool
 }
 
+// BranchState reports exact local and origin ref existence and all registered
+// checkouts of the local branch, including missing worktree paths.
 type BranchState struct {
 	Local   bool
 	Origin  bool
@@ -79,6 +83,8 @@ func ListWorkBranchStates(repo string) ([]WorkBranch, error) {
 	return branches, nil
 }
 
+// ValidateLiteralBranch accepts literal branch names, not revision expressions
+// or special HEAD/@ names. It checks syntax only, not ref existence.
 func ValidateLiteralBranch(repo, branch string) error {
 	if branch == "" || branch == "HEAD" || branch == "@" || strings.HasPrefix(branch, "-") {
 		return fmt.Errorf("invalid literal branch name %q", branch)
@@ -89,6 +95,8 @@ func ValidateLiteralBranch(repo, branch string) error {
 	return nil
 }
 
+// InspectBranch validates a literal branch name and reads its exact local and
+// origin refs and worktree registrations without fetching or modifying them.
 func InspectBranch(repo, branch string) (BranchState, error) {
 	if err := ValidateLiteralBranch(repo, branch); err != nil {
 		return BranchState{}, err
@@ -182,6 +190,9 @@ func verifiedSlotGit(repo, path string) (gitRunner, error) {
 	return run, nil
 }
 
+// VerifySlotRepository authenticates path's linked-worktree Git marker and
+// backlink, then verifies that its common Git directory has the same filesystem
+// identity as repo's. It does not change either repository or worktree.
 func VerifySlotRepository(repo, path string) error {
 	_, err := verifiedSlotGit(repo, path)
 	return err
