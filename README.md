@@ -164,6 +164,7 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | -------------------------- | ---------------------------------------------------- |
 | `treehouse`                | Get a worktree and open a subshell (alias for `get`) |
 | `treehouse get`            | Acquire a worktree from the pool                     |
+| `treehouse work <branch>`  | Resume or create a Git branch in a pooled worktree   |
 | `treehouse get --lease`    | Durably lease a worktree without a subshell; print its path |
 | `treehouse lease <name>`   | Durably lease an existing pool worktree in place, without touching its files or git state |
 | `treehouse enter <name\|pool/name>` | Open a subshell in an existing worktree by name (the number from `status`), even if it is in use; pool state is left untouched. A `pool/name` selector works from any directory |
@@ -176,6 +177,39 @@ You can instead keep the pool [inside the project](#in-project-storage) with `--
 | `treehouse destroy <pool> --all` | Dry-run removal of every disposable worktree in that pool |
 | `treehouse init`           | Create a default `treehouse.toml` config file        |
 | `treehouse update`         | Update treehouse to the latest version               |
+
+### Working on a branch
+
+`treehouse work feature/example` opens a subshell on that literal Git branch.
+Slash-containing and numeric names are branches; revision expressions such as
+`HEAD~1` and checkout history such as `@{-1}` are rejected. Without a branch,
+`work` delegates to `get`. The jj backend uses `get` instead (`work <branch>`
+exits 2 without allocating).
+
+If an eligible idle slot already holds the branch, `work` reserves that exact
+slot without resetting files, running creation hooks, or changing its recorded
+base or seed inventory. Dirty and unmerged work remains in place. Leased,
+quarantined, destroying, damaged, process-in-use, and live-owner slots are
+refused. A branch in the main checkout or a worktree outside this pool is also
+refused, with its path. `enter` can open another writable shell in an existing
+slot without reserving it.
+
+Otherwise, `work` acquires a slot and switches to the local branch, creates an
+explicit tracking branch when it exists only on origin, or creates a new branch
+from the resolved base. Fetch runs before origin discovery; `--no-fetch` uses
+only locally known refs. `--base` and `--include-file` follow `get` for normal
+acquisition; they do not rewrite an existing reclaimed slot.
+
+At shell exit, the same ownership checks and dirty-cleanup prompt as `get`
+apply. Switch and shell-start failures name the allocated path and attempt a
+guarded return. Refused cleanup leaves the slot intact, and failure cleanup
+never deletes a newly created branch.
+
+Missing unlocked registrations can be cleaned during authorized allocation,
+including reuse, and occupancy is checked again before switching. A missing
+**locked** registration remains protected. Before moving a checkout onto
+temporarily unavailable storage, use `git worktree lock <path>`; inspect
+`git worktree list --porcelain` before explicitly unlocking or pruning it.
 
 ### Navigation across projects
 
@@ -305,7 +339,7 @@ An aborted return exits nonzero. A non-interactive dirty return aborts without c
 
 For Git worktrees, both explicit return (including `--force`) and automatic return on subshell exit refuse to reset HEAD unless a local branch, tag, or remote-tracking ref preserves its commits. Unmerged branch-backed work can still be returned. Preservation is checked against stored commit ancestry, ignoring replacement objects and legacy grafts. Detached commits protected only by a reflog or another worktree's HEAD must first be saved, for example with `git branch saved-work HEAD` inside the worktree. The initial commit-preservation checks happen before process termination; a refusal there preserves HEAD, files, and the reservation. Later preparation or reset failures retain the reservation, but processes may already have stopped. Return pins Git commands to the slot's verified Git directory and worktree so a changed or missing marker cannot redirect cleanup into another checkout. `--force` permits dirty-file cleanup; it does not bypass commit preservation. Git repositories using reftable ref storage are refused because return requires files-based ref locking. The opt-in jj backend retains its existing reset behavior.
 
-Successful returns report on stderr which slot was parked and the target it was reset to. For Git, `Kept` identifies the previous commit and its protected branch or durable ref. A parked branch can be resumed with `treehouse get`, then `git switch <branch>`; an existing slot can be opened with `treehouse enter <name>` (another writable shell). A preserving tag or remote-tracking ref is not necessarily a resumable local branch. Returning never deletes branches, and repeating a return performs cleanup again.
+Successful returns report on stderr which slot was parked and the target it was reset to. For Git, `Kept` identifies the previous commit and its protected branch or durable ref. A parked branch can be resumed with `treehouse work <branch>`; an existing slot can be opened with `treehouse enter <name>` (another writable shell). A preserving tag or remote-tracking ref is not necessarily a resumable local branch. Returning never deletes branches, and repeating a return performs cleanup again.
 
 When changes were observed before reset, the report counts tracked paths (including staged changes) and untracked paths, even when Git's status configuration hides them. These are pre-cleanup observations, not an exact audit of deleted files; ignored and seeded files are not counted as untracked. Forced cleanup is labelled separately from confirmed cleanup. Optional reporting failures omit unavailable facts and never fail an otherwise safe return. jj returns use a generic slot confirmation. Damaged slots report that their reservation was cleared without a reset. If reset succeeds but saving pool state fails, the error says the slot was parked; no success banner is emitted.
 

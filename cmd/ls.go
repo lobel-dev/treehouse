@@ -75,21 +75,25 @@ func lsRow(slot pool.WorktreeStatus, poolDir, selector string, global bool) (bra
 		command += " --root " + quoteReturnPath(filepath.Dir(filepath.Dir(poolDir)))
 	}
 	enter := command + " enter " + quoteReturnPath(selector) + " (writable shell)"
-	get := command + " get"
+	acquire := command
+	canWork := true
 	if global {
 		if repo, err := vcs.FindMainRepoRootFrom(slot.Path); err == nil {
 			cd := "cd "
 			if runtime.GOOS == "windows" {
 				cd = "cd /d "
 			}
-			get = cd + quoteReturnPath(repo) + " && " + get
+			acquire = cd + quoteReturnPath(repo) + " && " + acquire
 		} else {
-			get = enter
+			canWork = false
 		}
 	}
 	next = enter
 	if state == pool.StatusAvailable {
-		state, next = "idle", get
+		state, next = "idle", acquire+" get"
+		if !canWork {
+			next = enter
+		}
 	}
 	if slot.Status == pool.StatusLeased && slot.LeaseHolder != "" {
 		state += ": " + slot.LeaseHolder
@@ -104,6 +108,16 @@ func lsRow(slot pool.WorktreeStatus, poolDir, selector string, global bool) (bra
 	}
 	if slot.Flavor != "git" {
 		return
+	}
+	if canWork {
+		repo, err := vcs.FindMainRepoRootFrom(slot.Path)
+		canWork = err == nil && vcs.BackendNameFor(repo) == "git"
+	}
+	if slot.Status == pool.StatusAvailable {
+		next = enter
+		if canWork {
+			next = acquire + " work <branch>"
+		}
 	}
 	facts := vcs.InspectGitWorktree(slot.Path)
 	if facts.Branch != "" {
@@ -147,7 +161,9 @@ func lsRow(slot pool.WorktreeStatus, poolDir, selector string, global bool) (bra
 			if atBase {
 				state = "parked"
 			}
-			next = get + ", then git switch " + quoteReturnPath(slot.LastBranch)
+			if canWork {
+				next = acquire + " work " + quoteReturnPath(slot.LastBranch)
+			}
 		}
 	}
 	return

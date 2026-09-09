@@ -624,3 +624,45 @@ func InspectGitBase(path, branch, expectedHead string) (atBase, merged, known bo
 	}
 	return gitvcs.InspectBase(path, branch, expectedHead)
 }
+
+// GitBranchState reports exact local/origin refs and registered local branch
+// holders, including missing paths; it is not an ownership or safety verdict.
+type GitBranchState = gitvcs.BranchState
+
+// ValidateGitBranch requires the Git backend and validates a literal branch
+// name without resolving revisions or requiring the branch to exist.
+func ValidateGitBranch(repo, branch string) error {
+	if BackendNameFor(repo) != "git" {
+		return fmt.Errorf("branch workflow requires Git")
+	}
+	return gitvcs.ValidateLiteralBranch(repo, branch)
+}
+
+// InspectGitBranch requires the Git backend and reads literal branch refs and
+// worktree registrations without fetching, healing, or changing a checkout.
+func InspectGitBranch(repo, branch string) (GitBranchState, error) {
+	if BackendNameFor(repo) != "git" {
+		return GitBranchState{}, fmt.Errorf("branch workflow requires Git")
+	}
+	return gitvcs.InspectBranch(repo, branch)
+}
+
+// WithGitBranchIdentity verifies a Git slot belongs to repo and directly holds
+// branch, locking HEAD then the branch ref through callback. The caller must
+// hold the pool lock through this call and persist ownership inside callback.
+func WithGitBranchIdentity(repo, path, branch string, callback func() error) error {
+	if WorktreeBackendName(path) != "git" {
+		return fmt.Errorf("target %s is not a Git slot", path)
+	}
+	return gitvcs.WithBranchIdentity(repo, path, branch, callback)
+}
+
+// SwitchGitBranch verifies a Git slot belongs to repo, then switches to a local
+// branch, tracks origin, or creates at the slot's HEAD, retaining Git's checkout
+// guards. The caller must hold the pool lock and own the slot throughout.
+func SwitchGitBranch(repo, path, branch string) error {
+	if WorktreeBackendName(path) != "git" {
+		return fmt.Errorf("target %s is not a Git slot", path)
+	}
+	return gitvcs.SwitchBranch(repo, path, branch)
+}

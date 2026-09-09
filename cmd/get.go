@@ -129,7 +129,10 @@ func getRunE(cmd *cobra.Command, args []string) error {
 		"TREEHOUSE_DIR=" + wtPath,
 	}
 	_, err = shell.Spawn(wtPath, env)
+	return errors.Join(err, finishAcquiredWorktree(repoRoot, poolDir, wtPath, cfg))
+}
 
+func finishAcquiredWorktree(repoRoot, poolDir, wtPath string, cfg config.Config) error {
 	// Check ownership before prompting; ReleaseConditional checks again before
 	// touching HEAD, files, or processes. Detachment is part of the reset.
 	ownReservation := pool.ReleasePreconditions{RequireOwnedByCaller: true}
@@ -141,7 +144,10 @@ func getRunE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	dirty, _ := vcs.IsDirty(wtPath)
+	dirty, err := vcs.IsDirty(wtPath)
+	if err != nil {
+		return fmt.Errorf("cannot inspect %s before return; leaving it in place: %w", wtPath, err)
+	}
 	if dirty {
 		fmt.Fprintf(os.Stderr, "🌳 Worktree has uncommitted changes.\n")
 
@@ -152,9 +158,7 @@ func getRunE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	report, releaseErr := pool.ReleaseConditionalReport(poolDir, wtPath, releaseBaseBranch(repoRoot, cfg), ownReservation, func() error {
-		return killLingeringProcesses(wtPath)
-	})
+	report, releaseErr := returnWorktreeToPool(poolDir, wtPath, releaseBaseBranch(repoRoot, cfg), ownReservation)
 	if err := releaseErr; err != nil {
 		if errors.Is(err, pool.ErrOwnerPreconditionFailed) {
 			fmt.Fprintf(os.Stderr, "🌳 Not returning %s to the pool: %v; leaving it exactly as it is.\n", ui.PrettyPath(wtPath), err)
@@ -174,8 +178,8 @@ func getRunE(cmd *cobra.Command, args []string) error {
 // as the release's beforeReset step, under the same state lock and immediately
 // before the reset, so a writer that re-enters the worktree cannot slip between
 // the emptiness check and the destructive reset.
-func returnWorktreeToPool(poolDir, wtPath, baseBranch string, preconditions pool.ReleasePreconditions) error {
-	return pool.ReleaseConditional(poolDir, wtPath, baseBranch, preconditions, func() error {
+func returnWorktreeToPool(poolDir, wtPath, baseBranch string, preconditions pool.ReleasePreconditions) (pool.ReleaseReport, error) {
+	return pool.ReleaseConditionalReport(poolDir, wtPath, baseBranch, preconditions, func() error {
 		return killLingeringProcesses(wtPath)
 	})
 }

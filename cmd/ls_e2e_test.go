@@ -263,7 +263,7 @@ func TestLsParkedHistoryE2E(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("ls: %s", stderr)
 	}
-	for _, want := range []string{"SLOT", "BRANCH", "STATE", "NEXT", "feature/history", "last used", "git switch " + quoteReturnPath("feature/history")} {
+	for _, want := range []string{"SLOT", "BRANCH", "STATE", "NEXT", "feature/history", "last used", "work " + quoteReturnPath("feature/history")} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q: %s", want, out)
 		}
