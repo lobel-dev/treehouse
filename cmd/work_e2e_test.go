@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kunchenguid/treehouse/internal/pool"
 )
 
 func TestWorkNewBranchKeepsAcquiredBaseE2E(t *testing.T) {
@@ -98,7 +100,7 @@ func TestWorkRefusesIndirectBranchIdentityE2E(t *testing.T) {
 }
 
 func TestWorkBranchDecisionsE2E(t *testing.T) {
-	for _, kind := range []string{"local", "origin-after-fetch", "main-checkout", "external-checkout", "leased", "dirty-reclaim", "shell-failure", "no-argument", "invalid"} {
+	for _, kind := range []string{"local", "origin-after-fetch", "main-checkout", "external-checkout", "leased", "dirty-reclaim", "shell-failure", "no-argument-shell-failure", "no-argument", "invalid"} {
 		t.Run(kind, func(t *testing.T) {
 			repo, home := setupTestRepo(t)
 			branch := "feature/resume"
@@ -139,6 +141,10 @@ func TestWorkBranchDecisionsE2E(t *testing.T) {
 			case "shell-failure":
 				env = []string{"SHELL=" + filepath.Join(home, "missing-shell"), "COMSPEC=" + filepath.Join(home, "missing-shell")}
 				wantCode, wantText = 1, "attempting guarded return"
+			case "no-argument-shell-failure":
+				args = []string{"work", "--no-fetch"}
+				env = []string{"SHELL=" + filepath.Join(home, "missing-shell")}
+				wantCode, wantText = 1, "missing-shell"
 			case "no-argument":
 				args, wantText = []string{"work"}, "parked"
 			case "invalid":
@@ -166,8 +172,10 @@ func TestWorkBranchDecisionsE2E(t *testing.T) {
 					t.Fatalf("branch changed: %s", got)
 				}
 			}
-			if kind == "shell-failure" {
-				gitCmd(t, repo, "show-ref", "--verify", "refs/heads/"+branch)
+			if kind == "shell-failure" || kind == "no-argument-shell-failure" {
+				if kind == "shell-failure" {
+					gitCmd(t, repo, "show-ref", "--verify", "refs/heads/"+branch)
+				}
 				if !strings.Contains(stderr, "parked") {
 					t.Fatal(stderr)
 				}
@@ -219,5 +227,30 @@ func TestWorkStaleRegistrationE2E(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestWorkHealsStaleDestroyReservationE2E(t *testing.T) {
+	repo, home := setupTestRepo(t)
+	path := idleReportingSlot(t, repo, home)
+	gitCmd(t, path, "switch", "-c", "feature/interrupted-prune")
+	dir := filepath.Dir(filepath.Dir(path))
+	state, err := pool.ReadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Worktrees[0].Destroying = true
+	state.Worktrees[0].OwnerPID = int32(os.Getpid())
+	state.Worktrees[0].OwnerStartedAt = 1 // Deliberately expired process identity.
+	if err := pool.WriteState(dir, state); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code := runTreehouse(t, repo, home, []string{"SHELL=" + exitShellBin}, "work", "--no-fetch", "feature/interrupted-prune")
+	if code != 0 || !strings.Contains(stderr, "Reserved the existing branch slot") || !strings.Contains(stderr, "parked") {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	state, err = pool.ReadState(dir)
+	if err != nil || len(state.Worktrees) != 1 || state.Worktrees[0].Destroying || state.Worktrees[0].OwnerPID != 0 {
+		t.Fatalf("reservation not healed and returned: %+v %v", state, err)
 	}
 }

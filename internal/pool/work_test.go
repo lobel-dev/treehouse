@@ -26,7 +26,7 @@ func workSlot(t *testing.T) (repo, dir, path string) {
 }
 
 func TestWorkReclamationRefusalsPreserveState(t *testing.T) {
-	for _, kind := range []string{"leased", "destroying", "quarantined", "owner", "process", "process-error", "damaged", "other-repo"} {
+	for _, kind := range []string{"leased", "destroying", "destroying-live", "quarantined", "owner", "process", "process-error", "damaged", "other-repo"} {
 		t.Run(kind, func(t *testing.T) {
 			repo, dir, path := workSlot(t)
 			state, err := ReadState(dir)
@@ -37,8 +37,13 @@ func TestWorkReclamationRefusalsPreserveState(t *testing.T) {
 			switch kind {
 			case "leased":
 				entry.Leased = true
-			case "destroying":
+			case "destroying", "destroying-live":
 				entry.Destroying = true
+				if kind == "destroying-live" {
+					if err := reserveOwner(entry); err != nil {
+						t.Fatal(err)
+					}
+				}
 			case "quarantined":
 				setSeedInventory(entry, nil, false)
 			case "owner":
@@ -82,42 +87,54 @@ func TestWorkReclamationRefusalsPreserveState(t *testing.T) {
 }
 
 func TestWorkReclamationPreservesBaseSeedAndFiles(t *testing.T) {
-	repo, dir, path := workSlot(t)
-	state, err := ReadState(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state.Worktrees[0].BaseBranch = "main"
-	state.Worktrees[0].LastBranch = "unrelated-history"
-	if err := WriteState(dir, state); err != nil {
-		t.Fatal(err)
-	}
-	state, err = ReadState(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := state.Worktrees[0]
-	runGit(t, path, "commit", "--allow-empty", "-m", "unmerged")
-	head := gitOut(t, path, "rev-parse", "HEAD")
-	if err := os.WriteFile(filepath.Join(path, "scratch"), []byte("keep"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	got, err := AcquireWorkBranch(repo, dir, "feature/work", 4, []string{"this-hook-must-not-run"}, AcquireOptions{SkipFetch: true, BaseBranch: "missing-base"})
-	if err != nil || got.Path != path || !got.Reclaimed {
-		t.Fatalf("reclaim: %+v %v", got, err)
-	}
-	after, err := FindByPath(dir, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.BaseBranch != before.BaseBranch || after.SeedInventoryDigest != before.SeedInventoryDigest || !reflect.DeepEqual(after.SeededPaths, before.SeededPaths) || after.LastBranch != "" {
-		t.Fatalf("metadata changed: before=%+v after=%+v", before, after)
-	}
-	if got := gitOut(t, path, "rev-parse", "HEAD"); got != head {
-		t.Fatal("HEAD changed")
-	}
-	if data, err := os.ReadFile(filepath.Join(path, "scratch")); err != nil || string(data) != "keep" {
-		t.Fatalf("files changed: %s %v", data, err)
+	for _, stale := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stale-destroy=%v", stale), func(t *testing.T) {
+			repo, dir, path := workSlot(t)
+			state, err := ReadState(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stale {
+				state.Worktrees[0].Destroying = true
+				state.Worktrees[0].OwnerPID = int32(os.Getpid())
+				state.Worktrees[0].OwnerStartedAt = 1
+			}
+			state.Worktrees[0].BaseBranch = "main"
+			state.Worktrees[0].LastBranch = "unrelated-history"
+			if err := WriteState(dir, state); err != nil {
+				t.Fatal(err)
+			}
+			state, err = ReadState(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := state.Worktrees[0]
+			runGit(t, path, "commit", "--allow-empty", "-m", "unmerged")
+			head := gitOut(t, path, "rev-parse", "HEAD")
+			if err := os.WriteFile(filepath.Join(path, "scratch"), []byte("keep"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := AcquireWorkBranch(repo, dir, "feature/work", 4, []string{"this-hook-must-not-run"}, AcquireOptions{SkipFetch: true, BaseBranch: "missing-base"})
+			if err != nil || got.Path != path || !got.Reclaimed {
+				t.Fatalf("reclaim: %+v %v", got, err)
+			}
+			after, err := FindByPath(dir, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.Destroying || !ownerAlive(*after) {
+				t.Fatalf("reservation not reclaimed: %+v", after)
+			}
+			if after.BaseBranch != before.BaseBranch || after.SeedInventoryDigest != before.SeedInventoryDigest || !reflect.DeepEqual(after.SeededPaths, before.SeededPaths) || after.LastBranch != "" {
+				t.Fatalf("metadata changed: before=%+v after=%+v", before, after)
+			}
+			if got := gitOut(t, path, "rev-parse", "HEAD"); got != head {
+				t.Fatal("HEAD changed")
+			}
+			if data, err := os.ReadFile(filepath.Join(path, "scratch")); err != nil || string(data) != "keep" {
+				t.Fatalf("files changed: %s %v", data, err)
+			}
+		})
 	}
 }
 

@@ -588,14 +588,6 @@ func RemoveCleanWorktree(repoRoot, path string) error {
 	return err
 }
 
-func Fetch(repoRoot string) error {
-	if !HasRemote(repoRoot, "origin") {
-		return nil
-	}
-	_, err := runGit(repoRoot, "fetch", "origin")
-	return err
-}
-
 func ResetWorktree(worktreePath, branch string) error {
 	return ResetWorktreeWithSeededPaths(worktreePath, branch, nil)
 }

@@ -129,7 +129,7 @@ func getRunE(cmd *cobra.Command, args []string) error {
 		"TREEHOUSE_DIR=" + wtPath,
 	}
 	_, err = shell.Spawn(wtPath, env)
-	return finishAcquiredWorktree(repoRoot, poolDir, wtPath, cfg)
+	return errors.Join(err, finishAcquiredWorktree(repoRoot, poolDir, wtPath, cfg))
 }
 
 func finishAcquiredWorktree(repoRoot, poolDir, wtPath string, cfg config.Config) error {
