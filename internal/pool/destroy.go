@@ -340,8 +340,9 @@ func classifyForDestroy(wt WorktreeEntry, repoRoot, defaultRef string) (target D
 		target.Facts.Comparisons = []MergeComparison{{Ref: ref, Result: "unknown"}}
 		return finalizeDestroyTarget(target)
 	}
+	target.Facts.Comparisons = []MergeComparison{{Ref: ref, Result: "merged"}}
 	if !merged {
-		target.Facts.Comparisons = []MergeComparison{{Ref: ref, Result: "not merged"}}
+		target.Facts.Comparisons[0].Result = "not merged"
 		landed := false
 		if wt.BaseBranch != "" {
 			var comparison MergeComparison

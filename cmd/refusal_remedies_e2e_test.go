@@ -105,8 +105,18 @@ func TestDestroyOverlappingRiskRemedyE2E(t *testing.T) {
 	if !strings.Contains(out, want) || !strings.Contains(out, "never removed by --all") {
 		t.Fatalf("incomplete overlap remedy: %s", out)
 	}
+	if !strings.Contains(out, "Compared with refs/remotes/origin/main: merged.") {
+		t.Errorf("missing successful default-ref comparison in preview: %s", out)
+	}
+	out, stderr, code = runTreehouse(t, repo, home, nil, "destroy", path, "--yes")
+	if code == 0 || !strings.Contains(out, "[leased,dirty]") {
+		t.Fatalf("expected leased dirty target refused: %s\n%s", out, stderr)
+	}
+	if !strings.Contains(out, "Compared with refs/remotes/origin/main: merged.") {
+		t.Errorf("missing successful default-ref comparison in refusal: %s", out)
+	}
 	if got, err := os.ReadFile(filepath.Join(path, "dirty")); err != nil || string(got) != "keep" {
-		t.Fatalf("preview changed files: %q %v", got, err)
+		t.Fatalf("destroy changed files: %q %v", got, err)
 	}
 }
 
