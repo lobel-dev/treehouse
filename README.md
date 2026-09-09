@@ -20,7 +20,7 @@ Or... are you starting a new worktree for every agent session, losing all your i
 
 Treehouse helps you manage a pool of reusable, isolated worktrees so each of your agents gets its own environment instantly - no cloning, no conflicts, no coordination overhead.
 
-- **Keyboard workspace** - `treehouse` opens a compact keyboard workspace for starting, resuming, opening, and cleaning up worktrees.
+- **Keyboard workspace** - `treehouse` opens a full-terminal Git workspace for starting, resuming, opening, and cleaning up worktrees.
 - **Reusable worktrees** - worktrees are preserved in a pool when you're done, with dependencies and build cache intact, ready for the next agent.
 - **Conflict-free** - automatic detection of in-use worktrees and your agents never step on each other's toes.
 
@@ -32,14 +32,14 @@ From your project, run:
 treehouse
 ```
 
-Use the keyboard to find and resume work:
+Use the keyboard to find and resume work. The workspace takes the full terminal: a 🌳 header, a branch list, a details panel, and an English command bar (`Enter  resume <branch>`). Enter always does that highlighted action.
 
 - **Resume a local branch** - remote-only refs are excluded; branches already checked out outside the pool are hidden. Move with arrows or `j/k`, filter with `/`, and press Enter.
 - **`n` Start a new branch** - enter its name; Treehouse prepares the tree and opens your shell.
 - **`t` Open an existing tree** - pick a tree by its branch and status. Its files stay as you leave them.
-- **`c` Clean up unused trees** - review each tree's branch (or labeled last-used branch) and space to reclaim, then use Tab to choose removal and Enter to confirm. Cancel is selected by default. Git branches are kept.
+- **`c` Clean up unused trees** - review each tree's branch (or labeled last-used branch) and how much disk it would reclaim. Enter removes the listed unused trees. Esc cancels and returns immediately. Git branches are kept. After a real prune, the full summary (including skip reasons) prints on stderr; `treehouse prune` then exits, while cleanup from home returns to the branch list with a one-line banner.
 
-Type `exit` to finish in the tree and return to your original terminal. Run `treehouse` again to choose different work. Press `q` to quit, Escape to go back or clear search, `r` to refresh, and `?` for help. Page Up/Down scrolls selected details.
+Type `exit` to finish in the tree and return to your original terminal. Run `treehouse` again to choose different work. Press `q` to quit, Escape to go back or clear search, `r` to refresh, and `?` for help. Page Up/Down scrolls the details panel.
 Unfinished changes are kept by default on exit; discarding them requires answering yes.
 
 Two shortcuts take you directly to a picker or cleanup:
@@ -49,10 +49,10 @@ treehouse enter
 treehouse prune
 ```
 
-The inline workspace keeps your terminal history visible, expands details under the selected item, and adapts to terminal width and supports light/dark backgrounds and `NO_COLOR`. Scripts can keep using `treehouse get`,
+The workspace adapts to terminal width and supports light/dark backgrounds and `NO_COLOR`. Scripts can keep using `treehouse get`,
 `work <branch>`, and the other explicit commands. Bare `treehouse` with redirected
 input or output keeps its existing `get` behavior. `treehouse menu` explicitly opens
-the inline workspace in supported terminals and a numbered, line-oriented menu with piped input, `TERM=dumb`, or Windows MSYS/MinTTY pipe terminals. With the jj backend, the home screen offers trees instead of Git branches.
+the Git workspace in supported terminals and a numbered, line-oriented menu with piped input, `TERM=dumb`, or Windows MSYS/MinTTY pipe terminals. With the jj backend, the home screen offers trees instead of Git branches.
 
 ## Install
 
