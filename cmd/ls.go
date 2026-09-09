@@ -17,6 +17,7 @@ import (
 var lsCmd = &cobra.Command{
 	Use:   "ls",
 	Short: "List slots, branches, and next steps",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if statusAll || statusGlobal {
 			return globalStatusWithTable(true)
