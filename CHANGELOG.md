@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.5.0](https://github.com/lobel-dev/treehouse/compare/v2.4.0...v2.5.0) (2026-09-09)
+
+
+### Features
+
+* add compact inline keyboard workspace ([7b03f8e](https://github.com/lobel-dev/treehouse/commit/7b03f8e92c48095118c98861a4e0334eebf03e1d))
+* add compact inline keyboard workspace ([8b06e35](https://github.com/lobel-dev/treehouse/commit/8b06e35fb1e3061f9b0f0473b1da374e007b0f6a))
+* alt-screen Git workspace with panels and an English command bar ([c07d7b5](https://github.com/lobel-dev/treehouse/commit/c07d7b508baf1561e17881264d0c4103818b7f05))
+* alt-screen Git workspace with panels and an English command bar ([e688c4e](https://github.com/lobel-dev/treehouse/commit/e688c4edc04120df93eccec6d3d50456eb557b26))
+
+
+### Bug Fixes
+
+* address CodeRabbit footer, demo init, and quit-assertion findings ([1c29a45](https://github.com/lobel-dev/treehouse/commit/1c29a45d6a5d6e64f8f3f567b49ba84ce31ffe4f))
+* address keyboard workspace review findings ([c10cc27](https://github.com/lobel-dev/treehouse/commit/c10cc272d38f1a13c5d157ca2108979cde5b236a))
+* cleanup footer shortcuts, demo main branch, and footer test ([4a7874c](https://github.com/lobel-dev/treehouse/commit/4a7874cd8e117d32ea32af5356882708fb7c80d5))
+* release empty slot when worktree creation fails ([ab928b9](https://github.com/lobel-dev/treehouse/commit/ab928b93363b8803fc24bc980eeda41e743b9be5))
+* skip occupied unmanaged worktree slots ([f6ddf0e](https://github.com/lobel-dev/treehouse/commit/f6ddf0ebc09ed8df5f4c6fa36ff88abe8a293cb2))
+
 ## [2.4.0](https://github.com/lobel-dev/treehouse/compare/v2.3.0...v2.4.0) (2026-09-09)
 
 
